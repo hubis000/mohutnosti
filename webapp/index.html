@@ -169,6 +169,20 @@
     <p class="hint" id="sideDataHint">Svt: — &nbsp; wing ref x: —</p>
     <p class="hint">Tip: the wing reference station is where the wing's quarter-chord crosses the fuselage — approximate it as roughly the middle of the wing root chord, seen or projected from the side.</p>
   </div>
+
+  <div class="card">
+    <h2>Side profile centroid (weighted) <span id="surfModeBadge" class="badge pending">idle</span></h2>
+    <p class="hint">Trace any set of side-profile shapes — fuselage side area, wing planform as seen from the side (dihedral projection), horizontal stabiliser side area, vertical tail, and so on — and give each a weight. The combined centroid is the weighted average of each shape's own centroid, weighted by weight × area. Weight defaults to 1 (equal, unweighted contribution by true area); lower or raise it to reflect a surface's effectiveness.</p>
+    <div id="surfaceList"></div>
+    <div class="row">
+      <button class="secondary" id="addSurface" disabled>+ Add surface</button>
+      <button id="finishPolySurf" disabled>Finish shape (or double-tap last point)</button>
+      <button class="danger" id="undoPointSurf" disabled>Undo point</button>
+    </div>
+    <table id="surfaceTable"></table>
+    <p class="hint" id="surfCentroidHint">Combined centroid: —</p>
+    <p class="hint">Station is measured from the nose along the nose→tail axis; offset is the perpendicular distance from that axis (sign is arbitrary — one side positive, the other negative — just keep it consistent when comparing shapes).</p>
+  </div>
 </section>
 
 <!-- RESULTS -->
@@ -199,7 +213,7 @@
 (() => {
   const state = {
     top: { img:null, scale:null, fuseLen:null, calibPts:[], mode:null, poly:[], wing:null, htail:null },
-    side: { img:null, scale:null, fuseLen:null, calibPts:[], mode:null, poly:[], vtail:null, wingRefX:null },
+    side: { img:null, scale:null, fuseLen:null, calibPts:[], mode:null, poly:[], vtail:null, wingRefX:null, surfaces:[] },
   };
 
   // ---------- generic helpers ----------
@@ -261,6 +275,22 @@
         ctx.beginPath();
         ctx.moveTo(view.wingRefX, 0); ctx.lineTo(view.wingRefX, canvas.height);
         ctx.stroke();
+      }
+      // weighted-centroid surfaces
+      if(view.surfaces){
+        view.surfaces.forEach(s=>{
+          if(!s.pts) return;
+          ctx.strokeStyle = s.color; ctx.fillStyle = s.color+'44';
+          drawPolyline(s.pts, true, true);
+          ctx.beginPath();
+          ctx.arc(s.cx, s.cy, Math.max(4,canvas.width/250), 0, 7);
+          ctx.fillStyle = s.color; ctx.fill();
+        });
+        if(view.combinedCentroid){
+          ctx.fillStyle = '#000'; ctx.strokeStyle = '#fff'; ctx.lineWidth = Math.max(1.5, canvas.width/600);
+          const {x,y} = view.combinedCentroid;
+          ctx.beginPath(); ctx.arc(x,y, Math.max(6,canvas.width/180), 0, 7); ctx.fill(); ctx.stroke();
+        }
       }
       // in-progress poly
       if(view.mode==='poly' && view.poly.length){
@@ -383,6 +413,8 @@
     loadImage(f, img => {
       state.side.img = img;
       state.side.calibPts=[]; state.side.scale=null; state.side.vtail=null; state.side.wingRefX=null;
+      state.side.surfaces=[]; state.side.combinedCentroid=null;
+      renderSurfaceList();
       checkSideCalibEnable();
       state.side.redraw();
     });
@@ -410,6 +442,7 @@
         setSideModeBadge('ready');
         document.getElementById('markWingRef').disabled=false;
         document.getElementById('drawVtail').disabled=false;
+        document.getElementById('addSurface').disabled=false;
       }
     };
   });
@@ -461,6 +494,147 @@
     const svtText = v && scale ? (v.area/(scale*scale)).toFixed(4)+' m²' : '—';
     const refText = state.side.wingRefX!=null && scale ? 'set' : '—';
     document.getElementById('sideDataHint').textContent = `Svt: ${svtText}   wing ref x: ${refText}`;
+  }
+
+  // ---------- SIDE PROFILE WEIGHTED CENTROID ----------
+  const SURFACE_COLORS = ['#8038bd','#1a7a7a','#a3610e','#6f8f2f','#b03a6b','#3a5aa8','#a83a3a','#2f8f6f'];
+  let surfaceIdSeq = 1;
+
+  document.getElementById('addSurface').addEventListener('click', ()=>{
+    const s = { id: surfaceIdSeq++, name: 'Surface '+state.side.surfaces.length, weight: 1, pts:null, area:0, cx:0, cy:0,
+                color: SURFACE_COLORS[(state.side.surfaces.length) % SURFACE_COLORS.length] };
+    state.side.surfaces.push(s);
+    renderSurfaceList();
+  });
+
+  function renderSurfaceList(){
+    const list = document.getElementById('surfaceList');
+    list.innerHTML = '';
+    state.side.surfaces.forEach(s => {
+      const row = document.createElement('div');
+      row.className = 'row';
+      row.style.borderLeft = `4px solid ${s.color}`;
+      row.style.paddingLeft = '8px';
+      row.innerHTML = `
+        <div style="flex:2;min-width:120px;">
+          <label>Name</label>
+          <input type="text" data-role="name" value="${s.name}">
+        </div>
+        <div style="flex:1;min-width:80px;">
+          <label>Weight</label>
+          <input type="number" data-role="weight" step="0.01" value="${s.weight}">
+        </div>
+        <div style="align-self:flex-end;display:flex;gap:6px;">
+          <button class="secondary" data-role="draw">${s.pts ? 'Redraw' : 'Draw shape'}</button>
+          <button class="danger" data-role="remove">Remove</button>
+        </div>
+        <div style="flex-basis:100%;" class="hint" data-role="status"></div>
+      `;
+      const nameInput = row.querySelector('[data-role=name]');
+      const weightInput = row.querySelector('[data-role=weight]');
+      nameInput.addEventListener('input', ()=>{ s.name = nameInput.value; updateSurfaceResults(); });
+      weightInput.addEventListener('input', ()=>{ s.weight = parseFloat(weightInput.value)||0; updateSurfaceResults(); });
+      row.querySelector('[data-role=draw]').addEventListener('click', ()=> startSurfaceDraw(s));
+      row.querySelector('[data-role=remove]').addEventListener('click', ()=>{
+        state.side.surfaces = state.side.surfaces.filter(x=>x.id!==s.id);
+        renderSurfaceList();
+        state.side.redraw();
+        updateSurfaceResults();
+      });
+      const statusEl = row.querySelector('[data-role=status]');
+      if(s.pts && state.side.scale){
+        statusEl.textContent = `area ${(s.area/(state.side.scale**2)).toFixed(4)} m²`;
+      } else {
+        statusEl.textContent = 'not drawn yet';
+      }
+      list.appendChild(row);
+    });
+  }
+
+  function startSurfaceDraw(surface){
+    state.side.mode='poly'; state.side.poly=[]; state.side.drawTargetSurfaceId = surface.id;
+    setSideModeBadge('drawing '+surface.name);
+    document.getElementById('finishPolySurf').disabled=false;
+    document.getElementById('undoPointSurf').disabled=false;
+    state.side.onClick = (x,y) => {
+      if(state.side.mode!=='poly' || state.side.drawTargetSurfaceId==null) return;
+      state.side.poly.push([x,y]);
+    };
+  }
+  document.getElementById('undoPointSurf').addEventListener('click', ()=>{
+    if(state.side.mode==='poly' && state.side.drawTargetSurfaceId!=null && state.side.poly.length){
+      state.side.poly.pop(); state.side.redraw();
+    }
+  });
+  document.getElementById('finishPolySurf').addEventListener('click', ()=>{
+    if(state.side.mode!=='poly' || state.side.drawTargetSurfaceId==null || state.side.poly.length<3) return;
+    const surface = state.side.surfaces.find(s=>s.id===state.side.drawTargetSurfaceId);
+    if(surface){
+      const {area,cx,cy} = shoelaceAreaCentroid(state.side.poly);
+      surface.pts = state.side.poly.slice(); surface.area = area; surface.cx = cx; surface.cy = cy;
+    }
+    state.side.mode=null; state.side.poly=[]; state.side.drawTargetSurfaceId=null;
+    setSideModeBadge('ready');
+    document.getElementById('finishPolySurf').disabled=true;
+    document.getElementById('undoPointSurf').disabled=true;
+    renderSurfaceList();
+    state.side.redraw();
+    updateSurfaceResults();
+  });
+
+  function fuselageFrame(){
+    const c = state.side.calibPts;
+    if(!c || c.length<2 || !state.side.scale) return null;
+    const nose = c[0], tail = c[1];
+    const dx = tail[0]-nose[0], dy = tail[1]-nose[1];
+    const len = Math.hypot(dx,dy) || 1;
+    const ux = dx/len, uy = dy/len;   // unit vector along fuselage, nose -> tail
+    const vx = -uy, vy = ux;          // unit vector perpendicular to it
+    return { nose, ux, uy, vx, vy, scale: state.side.scale };
+  }
+  function toStationOffset(frame, pt){
+    const dx = pt[0]-frame.nose[0], dy = pt[1]-frame.nose[1];
+    const station = (dx*frame.ux + dy*frame.uy)/frame.scale;
+    const offset  = (dx*frame.vx + dy*frame.vy)/frame.scale;
+    return {station, offset};
+  }
+
+  function updateSurfaceResults(){
+    const table = document.getElementById('surfaceTable');
+    const hint = document.getElementById('surfCentroidHint');
+    const frame = fuselageFrame();
+    const drawn = state.side.surfaces.filter(s=>s.pts);
+    if(!frame || !drawn.length){
+      table.innerHTML = '';
+      hint.textContent = 'Combined centroid: — (calibrate the side view and draw at least one surface)';
+      state.side.combinedCentroid = null;
+      state.side.redraw && state.side.redraw();
+      return;
+    }
+    let rows = '<tr><th>Surface</th><th>Weight</th><th>Area</th><th>Station</th><th>Offset</th></tr>';
+    let sumWA=0, sumWAStation=0, sumWAOffset=0;
+    drawn.forEach(s=>{
+      const areaM2 = s.area/(frame.scale**2);
+      const {station, offset} = toStationOffset(frame, [s.cx, s.cy]);
+      const wa = s.weight*areaM2;
+      sumWA += wa; sumWAStation += wa*station; sumWAOffset += wa*offset;
+      rows += `<tr><td>${s.name}</td><td class="num">${s.weight}</td><td class="num">${areaM2.toFixed(4)} m²</td>` +
+              `<td class="num">${station.toFixed(3)} m</td><td class="num">${offset.toFixed(3)} m</td></tr>`;
+    });
+    table.innerHTML = rows;
+    if(Math.abs(sumWA) < 1e-9){
+      hint.textContent = 'Combined centroid: undefined (weighted areas sum to zero — check weights).';
+      state.side.combinedCentroid = null;
+    } else {
+      const stationC = sumWAStation/sumWA, offsetC = sumWAOffset/sumWA;
+      hint.textContent = `Combined centroid: station ${stationC.toFixed(3)} m from nose, offset ${offsetC.toFixed(3)} m from the nose→tail axis (effective weighted area ${sumWA.toFixed(4)} m²).`;
+      // draw marker back in pixel space
+      state.side.combinedCentroid = {
+        x: frame.nose[0] + (stationC*frame.ux + offsetC*frame.vx)*frame.scale,
+        y: frame.nose[1] + (stationC*frame.uy + offsetC*frame.vy)*frame.scale,
+      };
+    }
+    state.side.redraw && state.side.redraw();
   }
 
   // ---------- TABS ----------
