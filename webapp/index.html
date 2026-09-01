@@ -1,0 +1,491 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tail Volume Coefficient Calculator</title>
+<style>
+  :root{
+    --bg:#f7f7f5; --panel:#ffffff; --ink:#1b1b1b; --muted:#666;
+    --accent:#1a5fb4; --accent2:#c01c28; --accent3:#2ec27e; --line:#ddd;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--ink);}
+  header{padding:14px 16px;background:var(--panel);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5;}
+  header h1{font-size:17px;margin:0 0 2px;}
+  header p{margin:0;font-size:12.5px;color:var(--muted);}
+  .tabs{display:flex;gap:4px;padding:8px 12px 0;background:var(--panel);overflow-x:auto;}
+  .tab{padding:8px 12px;border:1px solid var(--line);border-bottom:none;border-radius:8px 8px 0 0;background:#eee;font-size:13px;cursor:pointer;white-space:nowrap;color:var(--muted);}
+  .tab.active{background:var(--bg);color:var(--ink);font-weight:600;border-color:var(--line);}
+  main{padding:14px;max-width:760px;margin:0 auto;}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:12px;}
+  .card h2{font-size:14px;margin:0 0 8px;}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px;}
+  label{font-size:12.5px;color:var(--muted);display:block;margin-bottom:3px;}
+  input[type=number], input[type=text]{width:100%;padding:8px;border:1px solid var(--line);border-radius:6px;font-size:14px;}
+  input[type=file]{font-size:13px;}
+  button{padding:9px 14px;border:none;border-radius:6px;background:var(--accent);color:#fff;font-size:13px;cursor:pointer;}
+  button.secondary{background:#eee;color:var(--ink);border:1px solid var(--line);}
+  button.danger{background:var(--accent2);}
+  button:disabled{opacity:.4;cursor:not-allowed;}
+  .hint{font-size:12px;color:var(--muted);line-height:1.4;}
+  .canvas-wrap{width:100%;overflow:auto;border:1px solid var(--line);border-radius:8px;background:#eee;touch-action:pan-y;}
+  canvas{display:block;max-width:100%;}
+  .badge{display:inline-block;padding:2px 7px;border-radius:20px;font-size:11px;font-weight:600;margin-left:6px;}
+  .badge.ok{background:#e3f6ea;color:var(--accent3);}
+  .badge.pending{background:#f6ece3;color:#a8600a;}
+  table{width:100%;border-collapse:collapse;font-size:13.5px;}
+  td,th{padding:6px 4px;border-bottom:1px solid var(--line);text-align:left;}
+  .num{text-align:right;font-variant-numeric:tabular-nums;}
+  .result-big{font-size:28px;font-weight:700;}
+  .warn{background:#fff3e0;border:1px solid #ffcc80;border-radius:8px;padding:10px 12px;font-size:12.5px;color:#7a4a00;margin-bottom:12px;}
+  .legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-top:6px;}
+  .legend span{display:inline-flex;align-items:center;gap:5px;}
+  .swatch{width:10px;height:10px;border-radius:2px;display:inline-block;}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Tail Volume Coefficient Calculator</h1>
+  <p>Estimate horizontal &amp; vertical tail volume coefficients from top-view and side-view photos, scaled by fuselage length.</p>
+</header>
+
+<div class="tabs" id="tabs">
+  <div class="tab active" data-tab="top">1. Top view</div>
+  <div class="tab" data-tab="side">2. Side view</div>
+  <div class="tab" data-tab="results">3. Results</div>
+</div>
+
+<main>
+
+<div class="warn">
+  This tool gives a first-order estimate only. It approximates the tail moment arm using shape centroids
+  and the wing mean chord as (wing area / span), not the true quarter-chord MAC arm. Always verify results
+  against a proper 3-view drawing or the manufacturer's geometry before using them for design decisions.
+</div>
+
+<!-- TOP VIEW -->
+<section id="panel-top">
+  <div class="card">
+    <h2>Photo &amp; scale</h2>
+    <div class="row">
+      <div style="flex:1;min-width:200px;">
+        <label>Top-view photo (from directly above, camera as level/perpendicular as possible)</label>
+        <input type="file" id="topFile" accept="image/*" capture="environment">
+      </div>
+    </div>
+    <div class="row">
+      <div style="flex:1;min-width:140px;">
+        <label>Known fuselage length (m)</label>
+        <input type="number" id="topFuseLen" step="0.001" placeholder="e.g. 1.20">
+      </div>
+      <div style="align-self:flex-end;">
+        <button class="secondary" id="topCalibBtn" disabled>Calibrate: click nose then tail</button>
+      </div>
+    </div>
+    <p class="hint" id="topScaleHint">Load a photo, enter fuselage length, then click the calibrate button and tap the nose tip and the tail tip on the image.</p>
+  </div>
+
+  <div class="card">
+    <h2>Draw shapes on top view <span id="topModeBadge" class="badge pending">idle</span></h2>
+    <div class="row">
+      <button class="secondary" id="drawWing" disabled>Draw wing outline</button>
+      <button class="secondary" id="drawHtail" disabled>Draw horizontal tail outline</button>
+      <button id="finishPoly" disabled>Finish shape (or double-tap last point)</button>
+      <button class="danger" id="undoPoint" disabled>Undo point</button>
+    </div>
+    <div class="canvas-wrap"><canvas id="topCanvas"></canvas></div>
+    <div class="legend">
+      <span><span class="swatch" style="background:#1a5fb4"></span>calibration line</span>
+      <span><span class="swatch" style="background:#2ec27e"></span>wing</span>
+      <span><span class="swatch" style="background:#c01c28"></span>horizontal tail</span>
+    </div>
+    <p class="hint" id="topDataHint">Sw: — &nbsp; span b: — &nbsp; Sht: —</p>
+  </div>
+</section>
+
+<!-- SIDE VIEW -->
+<section id="panel-side" style="display:none;">
+  <div class="card">
+    <h2>Photo &amp; scale</h2>
+    <div class="row">
+      <div style="flex:1;min-width:200px;">
+        <label>Side-view photo (from directly the side, camera level)</label>
+        <input type="file" id="sideFile" accept="image/*" capture="environment">
+      </div>
+    </div>
+    <div class="row">
+      <div style="flex:1;min-width:140px;">
+        <label>Known fuselage length (m)</label>
+        <input type="number" id="sideFuseLen" step="0.001" placeholder="e.g. 1.20">
+      </div>
+      <div style="align-self:flex-end;">
+        <button class="secondary" id="sideCalibBtn" disabled>Calibrate: click nose then tail</button>
+      </div>
+    </div>
+    <p class="hint" id="sideScaleHint">Load a photo, enter fuselage length, then calibrate as with the top view.</p>
+  </div>
+
+  <div class="card">
+    <h2>Mark shapes on side view <span id="sideModeBadge" class="badge pending">idle</span></h2>
+    <div class="row">
+      <button class="secondary" id="markWingRef" disabled>Mark wing reference station (single tap)</button>
+      <button class="secondary" id="drawVtail" disabled>Draw vertical tail outline</button>
+      <button id="finishPolySide" disabled>Finish shape (or double-tap last point)</button>
+      <button class="danger" id="undoPointSide" disabled>Undo point</button>
+    </div>
+    <div class="canvas-wrap"><canvas id="sideCanvas"></canvas></div>
+    <div class="legend">
+      <span><span class="swatch" style="background:#1a5fb4"></span>calibration line</span>
+      <span><span class="swatch" style="background:#8038bd"></span>wing reference station</span>
+      <span><span class="swatch" style="background:#c01c28"></span>vertical tail</span>
+    </div>
+    <p class="hint" id="sideDataHint">Svt: — &nbsp; wing ref x: —</p>
+    <p class="hint">Tip: the wing reference station is where the wing's quarter-chord crosses the fuselage — approximate it as roughly the middle of the wing root chord, seen or projected from the side.</p>
+  </div>
+</section>
+
+<!-- RESULTS -->
+<section id="panel-results" style="display:none;">
+  <div class="card">
+    <h2>Inputs used</h2>
+    <table id="inputsTable"></table>
+  </div>
+  <div class="card">
+    <h2>Horizontal tail volume coefficient</h2>
+    <div class="result-big" id="vhtResult">—</div>
+    <p class="hint">V<sub>HT</sub> = (S<sub>HT</sub> × L<sub>HT</sub>) / (S<sub>W</sub> × c̄), where c̄ = S<sub>W</sub> / b (mean geometric chord)</p>
+  </div>
+  <div class="card">
+    <h2>Vertical tail volume coefficient</h2>
+    <div class="result-big" id="vvtResult">—</div>
+    <p class="hint">V<sub>VT</sub> = (S<sub>VT</sub> × L<sub>VT</sub>) / (S<sub>W</sub> × b)</p>
+  </div>
+  <div class="card">
+    <h2>Typical reference ranges (general aviation / UAV, for sanity-checking only)</h2>
+    <p class="hint">V<sub>HT</sub> ≈ 0.4–0.7 &nbsp;·&nbsp; V<sub>VT</sub> ≈ 0.02–0.06. These vary a lot by configuration — treat as a rough sanity check, not a target.</p>
+  </div>
+</section>
+
+</main>
+
+<script>
+(() => {
+  const state = {
+    top: { img:null, scale:null, fuseLen:null, calibPts:[], mode:null, poly:[], wing:null, htail:null },
+    side: { img:null, scale:null, fuseLen:null, calibPts:[], mode:null, poly:[], vtail:null, wingRefX:null },
+  };
+
+  // ---------- generic helpers ----------
+  function shoelaceAreaCentroid(pts){
+    let a=0, cx=0, cy=0;
+    for(let i=0;i<pts.length;i++){
+      const [x0,y0]=pts[i], [x1,y1]=pts[(i+1)%pts.length];
+      const cross = x0*y1 - x1*y0;
+      a += cross;
+      cx += (x0+x1)*cross;
+      cy += (y0+y1)*cross;
+    }
+    a/=2;
+    if(Math.abs(a) < 1e-9) return {area:0,cx:pts[0][0],cy:pts[0][1]};
+    cx /= (6*a); cy /= (6*a);
+    return {area:Math.abs(a), cx, cy};
+  }
+  function dist(p0,p1){ return Math.hypot(p1[0]-p0[0], p1[1]-p0[1]); }
+  function bboxWidth(pts){
+    const xs = pts.map(p=>p[0]);
+    return Math.max(...xs)-Math.min(...xs);
+  }
+
+  function loadImage(file, cb){
+    const reader = new FileReader();
+    reader.onload = e => {
+      const img = new Image();
+      img.onload = () => cb(img);
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function setupCanvas(canvas, view){
+    const ctx = canvas.getContext('2d');
+    function redraw(){
+      if(!view.img) return;
+      canvas.width = view.img.naturalWidth;
+      canvas.height = view.img.naturalHeight;
+      ctx.drawImage(view.img,0,0);
+      // calibration line
+      if(view.calibPts.length){
+        ctx.strokeStyle = '#1a5fb4'; ctx.fillStyle='#1a5fb4'; ctx.lineWidth = Math.max(2, canvas.width/400);
+        drawPolyline(view.calibPts, false);
+      }
+      // finished shapes
+      const colors = { wing:'#2ec27e', htail:'#c01c28', vtail:'#c01c28' };
+      ['wing','htail','vtail'].forEach(k=>{
+        if(view[k]){
+          ctx.strokeStyle = colors[k]; ctx.fillStyle = colors[k]+'55';
+          drawPolyline(view[k].pts, true, true);
+          ctx.beginPath();
+          ctx.arc(view[k].cx, view[k].cy, Math.max(4,canvas.width/250), 0, 7);
+          ctx.fillStyle = colors[k]; ctx.fill();
+        }
+      });
+      if(view.wingRefX!=null){
+        ctx.strokeStyle = '#8038bd'; ctx.lineWidth = Math.max(2, canvas.width/400);
+        ctx.beginPath();
+        ctx.moveTo(view.wingRefX, 0); ctx.lineTo(view.wingRefX, canvas.height);
+        ctx.stroke();
+      }
+      // in-progress poly
+      if(view.mode==='poly' && view.poly.length){
+        ctx.strokeStyle = '#c01c28'; ctx.fillStyle = '#c01c28';
+        drawPolyline(view.poly, false, false);
+      }
+    }
+    function drawPolyline(pts, close, fill){
+      ctx.beginPath();
+      ctx.moveTo(pts[0][0], pts[0][1]);
+      for(let i=1;i<pts.length;i++) ctx.lineTo(pts[i][0], pts[i][1]);
+      if(close) ctx.closePath();
+      if(fill) ctx.fill();
+      ctx.stroke();
+      pts.forEach(p=>{
+        ctx.beginPath();
+        ctx.arc(p[0],p[1], Math.max(3,canvas.width/300), 0, 7);
+        ctx.fill();
+      });
+    }
+    canvas.addEventListener('click', e => {
+      const rect = canvas.getBoundingClientRect();
+      const sx = canvas.width/rect.width, sy = canvas.height/rect.height;
+      const x = (e.clientX-rect.left)*sx, y = (e.clientY-rect.top)*sy;
+      view.onClick && view.onClick(x,y);
+      redraw();
+    });
+    view.redraw = redraw;
+    return redraw;
+  }
+
+  // ---------- TOP VIEW WIRING ----------
+  const topCanvas = document.getElementById('topCanvas');
+  setupCanvas(topCanvas, state.top);
+
+  document.getElementById('topFile').addEventListener('change', e => {
+    const f = e.target.files[0]; if(!f) return;
+    loadImage(f, img => {
+      state.top.img = img;
+      state.top.calibPts=[]; state.top.scale=null; state.top.wing=null; state.top.htail=null;
+      checkTopCalibEnable();
+      state.top.redraw();
+    });
+  });
+  document.getElementById('topFuseLen').addEventListener('input', e=>{
+    state.top.fuseLen = parseFloat(e.target.value)||null;
+    checkTopCalibEnable();
+  });
+  function checkTopCalibEnable(){
+    document.getElementById('topCalibBtn').disabled = !(state.top.img && state.top.fuseLen);
+  }
+  document.getElementById('topCalibBtn').addEventListener('click', ()=>{
+    state.top.mode='calib'; state.top.calibPts=[];
+    document.getElementById('topScaleHint').textContent = 'Tap the nose tip, then the tail tip, on the image.';
+    setTopModeBadge('calibrating...');
+    state.top.onClick = (x,y) => {
+      if(state.top.mode!=='calib') return;
+      state.top.calibPts.push([x,y]);
+      if(state.top.calibPts.length===2){
+        const px = dist(state.top.calibPts[0], state.top.calibPts[1]);
+        state.top.scale = px / state.top.fuseLen; // px per meter
+        document.getElementById('topScaleHint').textContent =
+          `Calibrated: ${px.toFixed(1)} px = ${state.top.fuseLen} m → scale ${state.top.scale.toFixed(2)} px/m.`;
+        state.top.mode=null;
+        setTopModeBadge('ready');
+        document.getElementById('drawWing').disabled=false;
+        document.getElementById('drawHtail').disabled=false;
+      }
+    };
+  });
+
+  function startTopPoly(kind){
+    state.top.mode='poly'; state.top.poly=[]; state.top.polyKind=kind;
+    setTopModeBadge('drawing '+(kind==='wing'?'wing':'horizontal tail'));
+    document.getElementById('finishPoly').disabled=false;
+    document.getElementById('undoPoint').disabled=false;
+    state.top.onClick = (x,y) => {
+      if(state.top.mode!=='poly') return;
+      state.top.poly.push([x,y]);
+    };
+  }
+  document.getElementById('drawWing').addEventListener('click', ()=>startTopPoly('wing'));
+  document.getElementById('drawHtail').addEventListener('click', ()=>startTopPoly('htail'));
+  document.getElementById('undoPoint').addEventListener('click', ()=>{
+    if(state.top.mode==='poly' && state.top.poly.length){ state.top.poly.pop(); state.top.redraw(); }
+  });
+  document.getElementById('finishPoly').addEventListener('click', ()=>{
+    if(state.top.mode!=='poly' || state.top.poly.length<3) return;
+    const {area,cx,cy} = shoelaceAreaCentroid(state.top.poly);
+    const span = bboxWidth(state.top.poly);
+    state.top[state.top.polyKind] = { pts: state.top.poly.slice(), area, cx, cy, span };
+    state.top.mode=null; state.top.poly=[];
+    setTopModeBadge('ready');
+    document.getElementById('finishPoly').disabled=true;
+    document.getElementById('undoPoint').disabled=true;
+    updateTopHint();
+    state.top.redraw();
+    updateResults();
+  });
+  function setTopModeBadge(text){
+    const b=document.getElementById('topModeBadge');
+    b.textContent=text;
+    b.className = 'badge ' + (text==='ready'?'ok':'pending');
+  }
+  function updateTopHint(){
+    const scale = state.top.scale;
+    const w = state.top.wing, h = state.top.htail;
+    const swText = w && scale ? (w.area/(scale*scale)).toFixed(4)+' m²' : '—';
+    const bText = w && scale ? (w.span/scale).toFixed(3)+' m' : '—';
+    const shtText = h && scale ? (h.area/(scale*scale)).toFixed(4)+' m²' : '—';
+    document.getElementById('topDataHint').textContent = `Sw: ${swText}   span b: ${bText}   Sht: ${shtText}`;
+  }
+
+  // ---------- SIDE VIEW WIRING ----------
+  const sideCanvas = document.getElementById('sideCanvas');
+  setupCanvas(sideCanvas, state.side);
+
+  document.getElementById('sideFile').addEventListener('change', e => {
+    const f = e.target.files[0]; if(!f) return;
+    loadImage(f, img => {
+      state.side.img = img;
+      state.side.calibPts=[]; state.side.scale=null; state.side.vtail=null; state.side.wingRefX=null;
+      checkSideCalibEnable();
+      state.side.redraw();
+    });
+  });
+  document.getElementById('sideFuseLen').addEventListener('input', e=>{
+    state.side.fuseLen = parseFloat(e.target.value)||null;
+    checkSideCalibEnable();
+  });
+  function checkSideCalibEnable(){
+    document.getElementById('sideCalibBtn').disabled = !(state.side.img && state.side.fuseLen);
+  }
+  document.getElementById('sideCalibBtn').addEventListener('click', ()=>{
+    state.side.mode='calib'; state.side.calibPts=[];
+    document.getElementById('sideScaleHint').textContent = 'Tap the nose tip, then the tail tip, on the image.';
+    setSideModeBadge('calibrating...');
+    state.side.onClick = (x,y) => {
+      if(state.side.mode!=='calib') return;
+      state.side.calibPts.push([x,y]);
+      if(state.side.calibPts.length===2){
+        const px = dist(state.side.calibPts[0], state.side.calibPts[1]);
+        state.side.scale = px / state.side.fuseLen;
+        document.getElementById('sideScaleHint').textContent =
+          `Calibrated: ${px.toFixed(1)} px = ${state.side.fuseLen} m → scale ${state.side.scale.toFixed(2)} px/m.`;
+        state.side.mode=null;
+        setSideModeBadge('ready');
+        document.getElementById('markWingRef').disabled=false;
+        document.getElementById('drawVtail').disabled=false;
+      }
+    };
+  });
+  document.getElementById('markWingRef').addEventListener('click', ()=>{
+    state.side.mode='wingref';
+    setSideModeBadge('tap wing reference station');
+    state.side.onClick = (x,y) => {
+      if(state.side.mode!=='wingref') return;
+      state.side.wingRefX = x;
+      state.side.mode=null;
+      setSideModeBadge('ready');
+      updateSideHint();
+      updateResults();
+    };
+  });
+  document.getElementById('drawVtail').addEventListener('click', ()=>{
+    state.side.mode='poly'; state.side.poly=[];
+    setSideModeBadge('drawing vertical tail');
+    document.getElementById('finishPolySide').disabled=false;
+    document.getElementById('undoPointSide').disabled=false;
+    state.side.onClick = (x,y) => {
+      if(state.side.mode!=='poly') return;
+      state.side.poly.push([x,y]);
+    };
+  });
+  document.getElementById('undoPointSide').addEventListener('click', ()=>{
+    if(state.side.mode==='poly' && state.side.poly.length){ state.side.poly.pop(); state.side.redraw(); }
+  });
+  document.getElementById('finishPolySide').addEventListener('click', ()=>{
+    if(state.side.mode!=='poly' || state.side.poly.length<3) return;
+    const {area,cx,cy} = shoelaceAreaCentroid(state.side.poly);
+    state.side.vtail = { pts: state.side.poly.slice(), area, cx, cy };
+    state.side.mode=null; state.side.poly=[];
+    setSideModeBadge('ready');
+    document.getElementById('finishPolySide').disabled=true;
+    document.getElementById('undoPointSide').disabled=true;
+    updateSideHint();
+    state.side.redraw();
+    updateResults();
+  });
+  function setSideModeBadge(text){
+    const b=document.getElementById('sideModeBadge');
+    b.textContent=text;
+    b.className = 'badge ' + (text==='ready'?'ok':'pending');
+  }
+  function updateSideHint(){
+    const scale = state.side.scale;
+    const v = state.side.vtail;
+    const svtText = v && scale ? (v.area/(scale*scale)).toFixed(4)+' m²' : '—';
+    const refText = state.side.wingRefX!=null && scale ? 'set' : '—';
+    document.getElementById('sideDataHint').textContent = `Svt: ${svtText}   wing ref x: ${refText}`;
+  }
+
+  // ---------- TABS ----------
+  document.getElementById('tabs').addEventListener('click', e=>{
+    const t = e.target.closest('.tab'); if(!t) return;
+    document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+    t.classList.add('active');
+    ['top','side','results'].forEach(k=>{
+      document.getElementById('panel-'+k).style.display = (k===t.dataset.tab)?'block':'none';
+    });
+    if(t.dataset.tab==='results') updateResults();
+  });
+
+  // ---------- RESULTS ----------
+  function updateResults(){
+    const top = state.top, side = state.side;
+    const ready = top.scale && top.wing && top.htail && side.scale && side.vtail && side.wingRefX!=null;
+    const inputsTable = document.getElementById('inputsTable');
+    if(!ready){
+      inputsTable.innerHTML = '<tr><td>Complete the top-view and side-view steps to see results.</td></tr>';
+      document.getElementById('vhtResult').textContent = '—';
+      document.getElementById('vvtResult').textContent = '—';
+      return;
+    }
+    const Sw = top.wing.area/(top.scale**2);
+    const b = top.wing.span/top.scale;
+    const cbar = Sw/b;
+    const Sht = top.htail.area/(top.scale**2);
+    const Svt = side.vtail.area/(side.scale**2);
+    // horizontal arm: distance along fuselage axis (x in top view) between wing centroid and htail centroid
+    const Lht = Math.abs(top.htail.cx - top.wing.cx)/top.scale;
+    // vertical arm: distance along fuselage axis (x in side view) between wing reference station and vtail centroid
+    const Lvt = Math.abs(side.vtail.cx - side.wingRefX)/side.scale;
+    const Vht = (Sht*Lht)/(Sw*cbar);
+    const Vvt = (Svt*Lvt)/(Sw*b);
+
+    inputsTable.innerHTML = `
+      <tr><th>Quantity</th><th>Value</th></tr>
+      <tr><td>Wing area S<sub>W</sub></td><td class="num">${Sw.toFixed(4)} m²</td></tr>
+      <tr><td>Wing span b</td><td class="num">${b.toFixed(3)} m</td></tr>
+      <tr><td>Mean chord c̄ = S<sub>W</sub>/b</td><td class="num">${cbar.toFixed(4)} m</td></tr>
+      <tr><td>Horizontal tail area S<sub>HT</sub></td><td class="num">${Sht.toFixed(4)} m²</td></tr>
+      <tr><td>Vertical tail area S<sub>VT</sub></td><td class="num">${Svt.toFixed(4)} m²</td></tr>
+      <tr><td>Horizontal tail arm L<sub>HT</sub></td><td class="num">${Lht.toFixed(3)} m</td></tr>
+      <tr><td>Vertical tail arm L<sub>VT</sub></td><td class="num">${Lvt.toFixed(3)} m</td></tr>
+    `;
+    document.getElementById('vhtResult').textContent = Vht.toFixed(4);
+    document.getElementById('vvtResult').textContent = Vvt.toFixed(4);
+  }
+})();
+</script>
+</body>
+</html>
