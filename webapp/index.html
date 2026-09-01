@@ -854,8 +854,15 @@
     return `0\nSECTION\n2\nENTITIES\n${ents}0\nENDSEC\n0\nEOF\n`;
   }
 
-  document.getElementById('exportDxf').addEventListener('click', ()=>{
+  document.getElementById('exportDxf').addEventListener('click', async ()=>{
     const dxf = generateDXF();
+    const downloads = window.claude ? await window.claude.use('downloads').catch(()=>null) : null;
+    if(downloads){
+      try{
+        await downloads.save({ filename: 'tail_volume_export.dxf', data: dxf });
+        return;
+      }catch(e){ /* fall through to the plain-link path below */ }
+    }
     const blob = new Blob([dxf], {type:'application/dxf'});
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
