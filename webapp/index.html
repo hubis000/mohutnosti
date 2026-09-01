@@ -3,42 +3,67 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Tail Volume Coefficient Calculator</title>
+<title>Tail Volume Plotter</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600&display=swap">
 <style>
   :root{
-    --bg:#f7f7f5; --panel:#ffffff; --ink:#1b1b1b; --muted:#666;
-    --accent:#1a5fb4; --accent2:#c01c28; --accent3:#2ec27e; --line:#ddd;
+    --bg:#eef1ec; --panel:#ffffff; --ink:#16211b; --muted:#5b665f;
+    --accent:#c9622a; --accent-ink:#ffffff;
+    --wing:#2f6f52; --htail:#c9622a; --vtail:#c9622a; --calib:#2b4c6f;
+    --line:#d3d9cf; --line-strong:#aab5a3;
+    --warn-bg:#fbeee1; --warn-line:#e3b47f; --warn-ink:#6b4322;
+    --font-display:'Space Grotesk',Segoe UI,sans-serif;
+    --font-body:'Inter',-apple-system,Segoe UI,sans-serif;
+    --font-mono:'IBM Plex Mono',SFMono-Regular,Consolas,monospace;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#12160f; --panel:#1a2019; --ink:#eef3ea; --muted:#98a394;
+      --accent:#e08a51; --accent-ink:#12160f;
+      --wing:#5da683; --htail:#e08a51; --vtail:#e08a51; --calib:#7fa8cc;
+      --line:#2b332a; --line-strong:#3c463a;
+      --warn-bg:#2a2115; --warn-line:#6b4d29; --warn-ink:#e6c393;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#12160f; --panel:#1a2019; --ink:#eef3ea; --muted:#98a394;
+    --accent:#e08a51; --accent-ink:#12160f;
+    --wing:#5da683; --htail:#e08a51; --vtail:#e08a51; --calib:#7fa8cc;
+    --line:#2b332a; --line-strong:#3c463a;
+    --warn-bg:#2a2115; --warn-line:#6b4d29; --warn-ink:#e6c393;
   }
   *{box-sizing:border-box;}
-  body{margin:0;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--ink);}
-  header{padding:14px 16px;background:var(--panel);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5;}
-  header h1{font-size:17px;margin:0 0 2px;}
+  body{margin:0;font-family:var(--font-body);background:var(--bg);color:var(--ink);}
+  header{padding:16px 18px;background:var(--panel);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5;}
+  header h1{font-family:var(--font-display);font-weight:700;font-size:19px;margin:0 0 3px;letter-spacing:.2px;text-wrap:balance;}
   header p{margin:0;font-size:12.5px;color:var(--muted);}
   .tabs{display:flex;gap:4px;padding:8px 12px 0;background:var(--panel);overflow-x:auto;}
-  .tab{padding:8px 12px;border:1px solid var(--line);border-bottom:none;border-radius:8px 8px 0 0;background:#eee;font-size:13px;cursor:pointer;white-space:nowrap;color:var(--muted);}
+  .tab{padding:8px 13px;border:1px solid var(--line);border-bottom:none;border-radius:8px 8px 0 0;background:var(--bg);font-family:var(--font-mono);font-size:12px;letter-spacing:.3px;cursor:pointer;white-space:nowrap;color:var(--muted);}
   .tab.active{background:var(--bg);color:var(--ink);font-weight:600;border-color:var(--line);}
   main{padding:14px;max-width:760px;margin:0 auto;}
   .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:12px;}
-  .card h2{font-size:14px;margin:0 0 8px;}
+  .card h2{font-family:var(--font-display);font-size:14px;margin:0 0 8px;font-weight:700;}
   .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px;}
   label{font-size:12.5px;color:var(--muted);display:block;margin-bottom:3px;}
-  input[type=number], input[type=text]{width:100%;padding:8px;border:1px solid var(--line);border-radius:6px;font-size:14px;}
-  input[type=file]{font-size:13px;}
-  button{padding:9px 14px;border:none;border-radius:6px;background:var(--accent);color:#fff;font-size:13px;cursor:pointer;}
-  button.secondary{background:#eee;color:var(--ink);border:1px solid var(--line);}
-  button.danger{background:var(--accent2);}
+  input[type=number], input[type=text]{width:100%;padding:8px;border:1px solid var(--line-strong);border-radius:6px;font-size:14px;font-family:var(--font-mono);background:var(--bg);color:var(--ink);}
+  input[type=file]{font-size:13px;color:var(--ink);}
+  button{padding:9px 14px;border:none;border-radius:6px;background:var(--accent);color:var(--accent-ink);font-weight:600;font-size:13px;cursor:pointer;}
+  button.secondary{background:var(--bg);color:var(--ink);border:1px solid var(--line-strong);}
+  button.danger{background:transparent;color:var(--accent);border:1px solid var(--accent);}
   button:disabled{opacity:.4;cursor:not-allowed;}
+  button:focus-visible, .tab:focus-visible{outline:2px solid var(--calib);outline-offset:2px;}
   .hint{font-size:12px;color:var(--muted);line-height:1.4;}
-  .canvas-wrap{width:100%;overflow:auto;border:1px solid var(--line);border-radius:8px;background:#eee;touch-action:pan-y;}
+  .canvas-wrap{width:100%;overflow:auto;border:1px solid var(--line);border-radius:8px;background:var(--bg);touch-action:pan-y;}
   canvas{display:block;max-width:100%;}
-  .badge{display:inline-block;padding:2px 7px;border-radius:20px;font-size:11px;font-weight:600;margin-left:6px;}
-  .badge.ok{background:#e3f6ea;color:var(--accent3);}
-  .badge.pending{background:#f6ece3;color:#a8600a;}
-  table{width:100%;border-collapse:collapse;font-size:13.5px;}
+  .badge{display:inline-block;padding:2px 8px;border-radius:20px;font-family:var(--font-mono);font-size:11px;font-weight:500;margin-left:6px;}
+  .badge.ok{background:color-mix(in srgb, var(--wing) 18%, transparent);color:var(--wing);}
+  .badge.pending{background:color-mix(in srgb, var(--accent) 16%, transparent);color:var(--accent);}
+  table{width:100%;border-collapse:collapse;font-size:13.5px;font-family:var(--font-mono);}
   td,th{padding:6px 4px;border-bottom:1px solid var(--line);text-align:left;}
   .num{text-align:right;font-variant-numeric:tabular-nums;}
-  .result-big{font-size:28px;font-weight:700;}
-  .warn{background:#fff3e0;border:1px solid #ffcc80;border-radius:8px;padding:10px 12px;font-size:12.5px;color:#7a4a00;margin-bottom:12px;}
+  .result-big{font-family:var(--font-display);font-size:32px;font-weight:700;font-variant-numeric:tabular-nums;}
+  .warn{background:var(--warn-bg);border:1px solid var(--warn-line);border-radius:8px;padding:10px 12px;font-size:12.5px;color:var(--warn-ink);margin-bottom:12px;}
   .legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-top:6px;}
   .legend span{display:inline-flex;align-items:center;gap:5px;}
   .swatch{width:10px;height:10px;border-radius:2px;display:inline-block;}
@@ -47,7 +72,7 @@
 <body>
 
 <header>
-  <h1>Tail Volume Coefficient Calculator</h1>
+  <h1>Tail Volume Plotter</h1>
   <p>Estimate horizontal &amp; vertical tail volume coefficients from top-view and side-view photos, scaled by fuselage length.</p>
 </header>
 
@@ -97,9 +122,9 @@
     </div>
     <div class="canvas-wrap"><canvas id="topCanvas"></canvas></div>
     <div class="legend">
-      <span><span class="swatch" style="background:#1a5fb4"></span>calibration line</span>
-      <span><span class="swatch" style="background:#2ec27e"></span>wing</span>
-      <span><span class="swatch" style="background:#c01c28"></span>horizontal tail</span>
+      <span><span class="swatch" style="background:#2b4c6f"></span>calibration line</span>
+      <span><span class="swatch" style="background:#2f6f52"></span>wing</span>
+      <span><span class="swatch" style="background:#c9622a"></span>horizontal tail</span>
     </div>
     <p class="hint" id="topDataHint">Sw: — &nbsp; span b: — &nbsp; Sht: —</p>
   </div>
@@ -137,9 +162,9 @@
     </div>
     <div class="canvas-wrap"><canvas id="sideCanvas"></canvas></div>
     <div class="legend">
-      <span><span class="swatch" style="background:#1a5fb4"></span>calibration line</span>
+      <span><span class="swatch" style="background:#2b4c6f"></span>calibration line</span>
       <span><span class="swatch" style="background:#8038bd"></span>wing reference station</span>
-      <span><span class="swatch" style="background:#c01c28"></span>vertical tail</span>
+      <span><span class="swatch" style="background:#c9622a"></span>vertical tail</span>
     </div>
     <p class="hint" id="sideDataHint">Svt: — &nbsp; wing ref x: —</p>
     <p class="hint">Tip: the wing reference station is where the wing's quarter-chord crosses the fuselage — approximate it as roughly the middle of the wing root chord, seen or projected from the side.</p>
@@ -217,11 +242,11 @@
       ctx.drawImage(view.img,0,0);
       // calibration line
       if(view.calibPts.length){
-        ctx.strokeStyle = '#1a5fb4'; ctx.fillStyle='#1a5fb4'; ctx.lineWidth = Math.max(2, canvas.width/400);
+        ctx.strokeStyle = '#2b4c6f'; ctx.fillStyle='#2b4c6f'; ctx.lineWidth = Math.max(2, canvas.width/400);
         drawPolyline(view.calibPts, false);
       }
       // finished shapes
-      const colors = { wing:'#2ec27e', htail:'#c01c28', vtail:'#c01c28' };
+      const colors = { wing:'#2f6f52', htail:'#c9622a', vtail:'#c9622a' };
       ['wing','htail','vtail'].forEach(k=>{
         if(view[k]){
           ctx.strokeStyle = colors[k]; ctx.fillStyle = colors[k]+'55';
@@ -239,7 +264,7 @@
       }
       // in-progress poly
       if(view.mode==='poly' && view.poly.length){
-        ctx.strokeStyle = '#c01c28'; ctx.fillStyle = '#c01c28';
+        ctx.strokeStyle = '#c9622a'; ctx.fillStyle = '#c9622a';
         drawPolyline(view.poly, false, false);
       }
     }
