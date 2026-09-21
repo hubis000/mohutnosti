@@ -220,7 +220,7 @@
 (() => {
   const state = {
     top: { img:null, scale:null, fuseLen:null, calibPts:[], mode:null, poly:[], wing:null, htail:null },
-    side: { img:null, scale:null, fuseLen:null, calibPts:[], mode:null, poly:[], vtail:null, wingRefX:null, surfaces:[] },
+    side: { img:null, scale:null, fuseLen:null, calibPts:[], mode:null, poly:[], vtail:null, wingRefPt:null, surfaces:[] },
   };
 
   // ---------- generic helpers ----------
@@ -343,11 +343,25 @@
           ctx.fillStyle = colors[k]; ctx.fill();
         }
       });
-      if(view.wingRefX!=null){
+      if(view.wingRefPt){
+        // draw the station line through the marked point, perpendicular to the
+        // fuselage axis (not a screen-vertical line) so it stays correct even
+        // when the fuselage isn't horizontal in the photo.
+        const frame = buildFrame(view);
         ctx.strokeStyle = '#8038bd'; ctx.lineWidth = Math.max(2, canvas.width/400);
         ctx.beginPath();
-        ctx.moveTo(view.wingRefX, 0); ctx.lineTo(view.wingRefX, canvas.height);
+        if(frame){
+          const [px,py] = view.wingRefPt;
+          const L = Math.hypot(canvas.width, canvas.height);
+          ctx.moveTo(px - frame.vx*L, py - frame.vy*L);
+          ctx.lineTo(px + frame.vx*L, py + frame.vy*L);
+        } else {
+          ctx.moveTo(view.wingRefPt[0], 0); ctx.lineTo(view.wingRefPt[0], canvas.height);
+        }
         ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(view.wingRefPt[0], view.wingRefPt[1], Math.max(4,canvas.width/250), 0, 7);
+        ctx.fillStyle = '#8038bd'; ctx.fill();
       }
       // weighted-centroid surfaces
       if(view.surfaces){
@@ -453,9 +467,23 @@
   document.getElementById('finishPoly').addEventListener('click', ()=>{
     if(state.top.mode!=='poly' || state.top.poly.length<3) return;
     const {area,cx,cy} = shoelaceAreaCentroid(state.top.poly);
-    const span = bboxWidth(state.top.poly);
     const pts = state.top.poly.slice();
     const frame = buildFrame(state.top);
+    // Span must be measured along the true spanwise axis (perpendicular to the
+    // nose->tail calibration line), not the image's raw x-axis: a photo where the
+    // fuselage isn't perfectly horizontal will otherwise report the wing's
+    // chordwise extent instead of its span. bboxWidth() is only a pre-calibration
+    // fallback (span cannot be resolved without a frame, but drawing is disabled
+    // until calibration is done, so this path should not normally be hit).
+    const span = frame
+      ? (() => {
+          const offsets = pts.map(p => {
+            const dx = p[0]-frame.nose[0], dy = p[1]-frame.nose[1];
+            return dx*frame.vx + dy*frame.vy; // pixel offset along the spanwise axis
+          });
+          return Math.max(...offsets) - Math.min(...offsets);
+        })()
+      : bboxWidth(pts);
     const macInfo = frame ? computeMAC(pts, frame) : null;
     state.top[state.top.polyKind] = { pts, area, cx, cy, span, mac: macInfo };
     state.top.mode=null; state.top.poly=[];
@@ -489,7 +517,7 @@
     const f = e.target.files[0]; if(!f) return;
     loadImage(f, img => {
       state.side.img = img;
-      state.side.calibPts=[]; state.side.scale=null; state.side.vtail=null; state.side.wingRefX=null;
+      state.side.calibPts=[]; state.side.scale=null; state.side.vtail=null; state.side.wingRefPt=null;
       state.side.surfaces=[]; state.side.combinedCentroid=null;
       renderSurfaceList();
       checkSideCalibEnable();
@@ -528,7 +556,7 @@
     setSideModeBadge('tap wing reference station');
     state.side.onClick = (x,y) => {
       if(state.side.mode!=='wingref') return;
-      state.side.wingRefX = x;
+      state.side.wingRefPt = [x,y];
       state.side.mode=null;
       setSideModeBadge('ready');
       updateSideHint();
@@ -569,7 +597,7 @@
     const scale = state.side.scale;
     const v = state.side.vtail;
     const svtText = v && scale ? (v.area/(scale*scale)).toFixed(4)+' m²' : '—';
-    const refText = state.side.wingRefX!=null && scale ? 'set' : '—';
+    const refText = state.side.wingRefPt!=null && scale ? 'set' : '—';
     document.getElementById('sideDataHint').textContent = `Svt: ${svtText}   wing ref x: ${refText}`;
   }
 
@@ -712,7 +740,7 @@
   // ---------- RESULTS ----------
   function computeSummary(){
     const top = state.top, side = state.side;
-    const ready = top.scale && top.wing && top.htail && side.scale && side.vtail && side.wingRefX!=null;
+    const ready = top.scale && top.wing && top.htail && side.scale && side.vtail && side.wingRefPt!=null;
     if(!ready) return null;
 
     const Sw = top.wing.area/(top.scale**2);
@@ -729,11 +757,20 @@
       Lht = Math.abs(htailMac.quarterChordStation - macInfo.quarterChordStation);
       LhtMethod = 'quarter-chord stations (wing MAC vs. horizontal tail MAC)';
     } else {
-      Lht = Math.abs(top.htail.cx - top.wing.cx)/top.scale;
+      // Fallback: centroid stations projected onto the fuselage axis (not the raw
+      // pixel x-difference — that's only correct if the fuselage happens to be
+      // perfectly horizontal in the photo).
+      const topFrame = buildFrame(top);
+      Lht = topFrame
+        ? Math.abs(toStationOffset(topFrame, [top.htail.cx, top.htail.cy]).station - toStationOffset(topFrame, [top.wing.cx, top.wing.cy]).station)
+        : Math.abs(top.htail.cx - top.wing.cx)/top.scale;
       LhtMethod = 'shape centroids (MAC could not be resolved for this outline)';
     }
     // vertical arm: distance along fuselage axis (x in side view) between wing reference station and vtail centroid
-    const Lvt = Math.abs(side.vtail.cx - side.wingRefX)/side.scale;
+    const sideFrameForLvt = buildFrame(side);
+    const vtStation = sideFrameForLvt ? toStationOffset(sideFrameForLvt, [side.vtail.cx, side.vtail.cy]).station : side.vtail.cx/side.scale;
+    const wingRefStation = sideFrameForLvt ? toStationOffset(sideFrameForLvt, side.wingRefPt).station : side.wingRefPt[0]/side.scale;
+    const Lvt = Math.abs(vtStation - wingRefStation);
     const Vht = (Sht*Lht)/(Sw*MAC);
     const Vvt = (Svt*Lvt)/(Sw*b);
 
@@ -816,8 +853,8 @@
         ents += dxfPoint('SIDE_VTAIL', station, offset);
         ents += dxfText('SIDE_VTAIL', station, offset, 0.02, 'vtail centroid');
       }
-      if(state.side.wingRefX!=null){
-        const {station} = toStationOffset(sideFrame, [state.side.wingRefX, 0]);
+      if(state.side.wingRefPt){
+        const {station} = toStationOffset(sideFrame, state.side.wingRefPt);
         ents += dxfText('SIDE_WING_REF', station, 0, 0.02, 'wing reference station');
         ents += dxfPoint('SIDE_WING_REF', station, 0);
       }
