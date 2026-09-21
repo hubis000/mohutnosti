@@ -1,0 +1,913 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tail Volume Plotter</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600&display=swap">
+<style>
+  :root{
+    --bg:#eef1ec; --panel:#ffffff; --ink:#16211b; --muted:#5b665f;
+    --accent:#c9622a; --accent-ink:#ffffff;
+    --wing:#2f6f52; --htail:#c9622a; --vtail:#c9622a; --calib:#2b4c6f;
+    --line:#d3d9cf; --line-strong:#aab5a3;
+    --warn-bg:#fbeee1; --warn-line:#e3b47f; --warn-ink:#6b4322;
+    --font-display:'Space Grotesk',Segoe UI,sans-serif;
+    --font-body:'Inter',-apple-system,Segoe UI,sans-serif;
+    --font-mono:'IBM Plex Mono',SFMono-Regular,Consolas,monospace;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#12160f; --panel:#1a2019; --ink:#eef3ea; --muted:#98a394;
+      --accent:#e08a51; --accent-ink:#12160f;
+      --wing:#5da683; --htail:#e08a51; --vtail:#e08a51; --calib:#7fa8cc;
+      --line:#2b332a; --line-strong:#3c463a;
+      --warn-bg:#2a2115; --warn-line:#6b4d29; --warn-ink:#e6c393;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#12160f; --panel:#1a2019; --ink:#eef3ea; --muted:#98a394;
+    --accent:#e08a51; --accent-ink:#12160f;
+    --wing:#5da683; --htail:#e08a51; --vtail:#e08a51; --calib:#7fa8cc;
+    --line:#2b332a; --line-strong:#3c463a;
+    --warn-bg:#2a2115; --warn-line:#6b4d29; --warn-ink:#e6c393;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:var(--font-body);background:var(--bg);color:var(--ink);}
+  header{padding:16px 18px;background:var(--panel);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5;}
+  header h1{font-family:var(--font-display);font-weight:700;font-size:19px;margin:0 0 3px;letter-spacing:.2px;text-wrap:balance;}
+  header p{margin:0;font-size:12.5px;color:var(--muted);}
+  .tabs{display:flex;gap:4px;padding:8px 12px 0;background:var(--panel);overflow-x:auto;}
+  .tab{padding:8px 13px;border:1px solid var(--line);border-bottom:none;border-radius:8px 8px 0 0;background:var(--bg);font-family:var(--font-mono);font-size:12px;letter-spacing:.3px;cursor:pointer;white-space:nowrap;color:var(--muted);}
+  .tab.active{background:var(--bg);color:var(--ink);font-weight:600;border-color:var(--line);}
+  main{padding:14px;max-width:760px;margin:0 auto;}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:12px;}
+  .card h2{font-family:var(--font-display);font-size:14px;margin:0 0 8px;font-weight:700;}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px;}
+  label{font-size:12.5px;color:var(--muted);display:block;margin-bottom:3px;}
+  input[type=number], input[type=text]{width:100%;padding:8px;border:1px solid var(--line-strong);border-radius:6px;font-size:14px;font-family:var(--font-mono);background:var(--bg);color:var(--ink);}
+  input[type=file]{font-size:13px;color:var(--ink);}
+  button{padding:9px 14px;border:none;border-radius:6px;background:var(--accent);color:var(--accent-ink);font-weight:600;font-size:13px;cursor:pointer;}
+  button.secondary{background:var(--bg);color:var(--ink);border:1px solid var(--line-strong);}
+  button.danger{background:transparent;color:var(--accent);border:1px solid var(--accent);}
+  button:disabled{opacity:.4;cursor:not-allowed;}
+  button:focus-visible, .tab:focus-visible{outline:2px solid var(--calib);outline-offset:2px;}
+  .hint{font-size:12px;color:var(--muted);line-height:1.4;}
+  .canvas-wrap{width:100%;overflow:auto;border:1px solid var(--line);border-radius:8px;background:var(--bg);touch-action:pan-y;}
+  canvas{display:block;max-width:100%;}
+  .badge{display:inline-block;padding:2px 8px;border-radius:20px;font-family:var(--font-mono);font-size:11px;font-weight:500;margin-left:6px;}
+  .badge.ok{background:color-mix(in srgb, var(--wing) 18%, transparent);color:var(--wing);}
+  .badge.pending{background:color-mix(in srgb, var(--accent) 16%, transparent);color:var(--accent);}
+  table{width:100%;border-collapse:collapse;font-size:13.5px;font-family:var(--font-mono);}
+  td,th{padding:6px 4px;border-bottom:1px solid var(--line);text-align:left;}
+  .num{text-align:right;font-variant-numeric:tabular-nums;}
+  .result-big{font-family:var(--font-display);font-size:32px;font-weight:700;font-variant-numeric:tabular-nums;}
+  .warn{background:var(--warn-bg);border:1px solid var(--warn-line);border-radius:8px;padding:10px 12px;font-size:12.5px;color:var(--warn-ink);margin-bottom:12px;}
+  .legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-top:6px;}
+  .legend span{display:inline-flex;align-items:center;gap:5px;}
+  .swatch{width:10px;height:10px;border-radius:2px;display:inline-block;}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Tail Volume Plotter</h1>
+  <p>Estimate longitudinal and lateral stability (horizontal &amp; vertical tail volume coefficients) from top-view and side-view photos, scaled by fuselage length.</p>
+</header>
+
+<div class="tabs" id="tabs">
+  <div class="tab active" data-tab="top">1. Top view</div>
+  <div class="tab" data-tab="side">2. Side view</div>
+  <div class="tab" data-tab="results">3. Results</div>
+</div>
+
+<main>
+
+<div class="warn">
+  This tool gives a first-order estimate only. The horizontal tail arm and mean aerodynamic chord (MAC) are
+  computed from the drawn wing/tail outlines by slicing them span-wise, which is a good approximation for a
+  clean planform but degrades on a heavily broken or non-planar (e.g. cranked, winglet-heavy) shape. The
+  vertical tail arm still relies on the manually marked wing reference station. Always verify results against
+  a proper 3-view drawing or the manufacturer's geometry before using them for design decisions.
+</div>
+
+<!-- TOP VIEW -->
+<section id="panel-top">
+  <div class="card">
+    <h2>Photo &amp; scale</h2>
+    <div class="row">
+      <div style="flex:1;min-width:200px;">
+        <label>Top-view photo (from directly above, camera as level/perpendicular as possible)</label>
+        <input type="file" id="topFile" accept="image/*" capture="environment">
+      </div>
+    </div>
+    <div class="row">
+      <div style="flex:1;min-width:140px;">
+        <label>Known fuselage length (m)</label>
+        <input type="number" id="topFuseLen" step="0.001" placeholder="e.g. 1.20">
+      </div>
+      <div style="align-self:flex-end;">
+        <button class="secondary" id="topCalibBtn" disabled>Calibrate: click nose then tail</button>
+      </div>
+    </div>
+    <p class="hint" id="topScaleHint">Load a photo, enter fuselage length, then click the calibrate button and tap the nose tip and the tail tip on the image.</p>
+  </div>
+
+  <div class="card">
+    <h2>Draw shapes on top view <span id="topModeBadge" class="badge pending">idle</span></h2>
+    <div class="row">
+      <button class="secondary" id="drawWing" disabled>Draw wing outline</button>
+      <button class="secondary" id="drawHtail" disabled>Draw horizontal tail outline</button>
+      <button id="finishPoly" disabled>Finish shape (or double-tap last point)</button>
+      <button class="danger" id="undoPoint" disabled>Undo point</button>
+    </div>
+    <div class="canvas-wrap"><canvas id="topCanvas"></canvas></div>
+    <div class="legend">
+      <span><span class="swatch" style="background:#2b4c6f"></span>calibration line</span>
+      <span><span class="swatch" style="background:#2f6f52"></span>wing</span>
+      <span><span class="swatch" style="background:#c9622a"></span>horizontal tail</span>
+    </div>
+    <p class="hint" id="topDataHint">Sw: — &nbsp; span b: — &nbsp; Sht: —</p>
+  </div>
+</section>
+
+<!-- SIDE VIEW -->
+<section id="panel-side" style="display:none;">
+  <div class="card">
+    <h2>Photo &amp; scale</h2>
+    <div class="row">
+      <div style="flex:1;min-width:200px;">
+        <label>Side-view photo (from directly the side, camera level)</label>
+        <input type="file" id="sideFile" accept="image/*" capture="environment">
+      </div>
+    </div>
+    <div class="row">
+      <div style="flex:1;min-width:140px;">
+        <label>Known fuselage length (m)</label>
+        <input type="number" id="sideFuseLen" step="0.001" placeholder="e.g. 1.20">
+      </div>
+      <div style="align-self:flex-end;">
+        <button class="secondary" id="sideCalibBtn" disabled>Calibrate: click nose then tail</button>
+      </div>
+    </div>
+    <p class="hint" id="sideScaleHint">Load a photo, enter fuselage length, then calibrate as with the top view.</p>
+  </div>
+
+  <div class="card">
+    <h2>Mark shapes on side view <span id="sideModeBadge" class="badge pending">idle</span></h2>
+    <div class="row">
+      <button class="secondary" id="markWingRef" disabled>Mark wing reference station (single tap)</button>
+      <button class="secondary" id="drawVtail" disabled>Draw vertical tail outline</button>
+      <button id="finishPolySide" disabled>Finish shape (or double-tap last point)</button>
+      <button class="danger" id="undoPointSide" disabled>Undo point</button>
+    </div>
+    <div class="canvas-wrap"><canvas id="sideCanvas"></canvas></div>
+    <div class="legend">
+      <span><span class="swatch" style="background:#2b4c6f"></span>calibration line</span>
+      <span><span class="swatch" style="background:#8038bd"></span>wing reference station</span>
+      <span><span class="swatch" style="background:#c9622a"></span>vertical tail</span>
+    </div>
+    <p class="hint" id="sideDataHint">Svt: — &nbsp; wing ref x: —</p>
+    <p class="hint">Tip: the wing reference station is where the wing's quarter-chord crosses the fuselage — approximate it as roughly the middle of the wing root chord, seen or projected from the side.</p>
+  </div>
+
+  <div class="card">
+    <h2>Side profile centroid (weighted) <span id="surfModeBadge" class="badge pending">idle</span></h2>
+    <p class="hint">Trace any set of side-profile shapes — fuselage side area, wing planform as seen from the side (dihedral projection), horizontal stabiliser side area, vertical tail, and so on — and give each a weight. The combined centroid is the weighted average of each shape's own centroid, weighted by weight × area. Weight defaults to 1 (equal, unweighted contribution by true area); lower or raise it to reflect a surface's effectiveness.</p>
+    <div id="surfaceList"></div>
+    <div class="row">
+      <button class="secondary" id="addSurface" disabled>+ Add surface</button>
+      <button id="finishPolySurf" disabled>Finish shape (or double-tap last point)</button>
+      <button class="danger" id="undoPointSurf" disabled>Undo point</button>
+    </div>
+    <table id="surfaceTable"></table>
+    <p class="hint" id="surfCentroidHint">Combined centroid: —</p>
+    <p class="hint">Station is measured from the nose along the nose→tail axis; offset is the perpendicular distance from that axis (sign is arbitrary — one side positive, the other negative — just keep it consistent when comparing shapes).</p>
+  </div>
+</section>
+
+<!-- RESULTS -->
+<section id="panel-results" style="display:none;">
+  <div class="card">
+    <h2>Inputs used</h2>
+    <table id="inputsTable"></table>
+  </div>
+  <div class="card">
+    <h2>Longitudinal stability — horizontal tail volume V<sub>HT</sub></h2>
+    <div class="result-big" id="vhtResult">—</div>
+    <p class="hint">V<sub>HT</sub> = (S<sub>HT</sub> × L<sub>HT</sub>) / (S<sub>W</sub> × MAC), using the wing's mean aerodynamic chord (MAC) and the distance between the wing's and horizontal tail's own quarter-chord stations.</p>
+  </div>
+  <div class="card">
+    <h2>Lateral stability — vertical tail volume V<sub>VT</sub></h2>
+    <div class="result-big" id="vvtResult">—</div>
+    <p class="hint">V<sub>VT</sub> = (S<sub>VT</sub> × L<sub>VT</sub>) / (S<sub>W</sub> × b)</p>
+  </div>
+  <div class="card">
+    <h2>Typical reference ranges (general aviation / UAV, for sanity-checking only)</h2>
+    <p class="hint">V<sub>HT</sub> ≈ 0.4–0.7 &nbsp;·&nbsp; V<sub>VT</sub> ≈ 0.02–0.06. These vary a lot by configuration — treat as a rough sanity check, not a target.</p>
+  </div>
+  <div class="card">
+    <h2>Export</h2>
+    <p class="hint">Exports every drawn shape (top-view wing/horizontal tail, side-view vertical tail and weighted surfaces), each shape's own centroid, the wing MAC quarter-chord point, and a text summary of S<sub>W</sub>, MAC, S<sub>HT</sub>, S<sub>VT</sub>, L<sub>HT</sub>, L<sub>VT</sub>, V<sub>HT</sub>, V<sub>VT</sub> and the combined weighted side centroid — as a DXF file in metres, so it can be checked against a 3-view drawing in CAD.</p>
+    <button id="exportDxf" disabled>Export DXF</button>
+  </div>
+</section>
+
+</main>
+
+<script>
+(() => {
+  const state = {
+    top: { img:null, scale:null, fuseLen:null, calibPts:[], mode:null, poly:[], wing:null, htail:null },
+    side: { img:null, scale:null, fuseLen:null, calibPts:[], mode:null, poly:[], vtail:null, wingRefPt:null, surfaces:[] },
+  };
+
+  // ---------- generic helpers ----------
+  function shoelaceAreaCentroid(pts){
+    let a=0, cx=0, cy=0;
+    for(let i=0;i<pts.length;i++){
+      const [x0,y0]=pts[i], [x1,y1]=pts[(i+1)%pts.length];
+      const cross = x0*y1 - x1*y0;
+      a += cross;
+      cx += (x0+x1)*cross;
+      cy += (y0+y1)*cross;
+    }
+    a/=2;
+    if(Math.abs(a) < 1e-9) return {area:0,cx:pts[0][0],cy:pts[0][1]};
+    cx /= (6*a); cy /= (6*a);
+    return {area:Math.abs(a), cx, cy};
+  }
+  function dist(p0,p1){ return Math.hypot(p1[0]-p0[0], p1[1]-p0[1]); }
+  function bboxWidth(pts){
+    const xs = pts.map(p=>p[0]);
+    return Math.max(...xs)-Math.min(...xs);
+  }
+
+  // Coordinate frame anchored at the nose, x-axis (station) running nose->tail,
+  // y-axis (offset) perpendicular to it. Shared by top view (offset = spanwise)
+  // and side view (offset = vertical). Units: pixels in, real-world via .scale.
+  function buildFrame(view){
+    const c = view.calibPts;
+    if(!c || c.length<2 || !view.scale) return null;
+    const nose = c[0], tail = c[1];
+    const dx = tail[0]-nose[0], dy = tail[1]-nose[1];
+    const len = Math.hypot(dx,dy) || 1;
+    const ux = dx/len, uy = dy/len;
+    const vx = -uy, vy = ux;
+    return { nose, ux, uy, vx, vy, scale: view.scale };
+  }
+  function toStationOffset(frame, pt){
+    const dx = pt[0]-frame.nose[0], dy = pt[1]-frame.nose[1];
+    const station = (dx*frame.ux + dy*frame.uy)/frame.scale;
+    const offset  = (dx*frame.vx + dy*frame.vy)/frame.scale;
+    return {station, offset};
+  }
+
+  // Mean aerodynamic chord of a planform polygon, by slicing it span-wise in the
+  // frame's (station, offset) axes: MAC = (1/S) * integral of chord(offset)^2 d(offset).
+  // Also returns the station of the polygon's leading edge at the MAC station, so a
+  // quarter-chord point can be built from it.
+  function computeMAC(pts, frame){
+    const uv = pts.map(p=>{
+      const dx=p[0]-frame.nose[0], dy=p[1]-frame.nose[1];
+      return [dx*frame.ux+dy*frame.uy, dx*frame.vx+dy*frame.vy]; // pixel [station,offset]
+    });
+    const vs = uv.map(p=>p[1]);
+    const vmin = Math.min(...vs), vmax = Math.max(...vs);
+    const N = 240;
+    const chordAt = v => {
+      let us = [];
+      for(let k=0;k<uv.length;k++){
+        const [u1,v1]=uv[k], [u2,v2]=uv[(k+1)%uv.length];
+        if((v1<=v && v2>v) || (v2<=v && v1>v)){
+          us.push(u1 + (v-v1)/(v2-v1)*(u2-u1));
+        }
+      }
+      return us;
+    };
+    let areaInt=0, chord2Int=0, momentInt=0, prevChord=null, prevV=null;
+    for(let i=0;i<=N;i++){
+      const v = vmin + (vmax-vmin)*i/N;
+      const us = chordAt(v);
+      const chord = us.length>=2 ? Math.max(...us)-Math.min(...us) : 0;
+      if(prevChord!=null){
+        const dv = v-prevV;
+        areaInt += 0.5*(chord+prevChord)*dv;
+        chord2Int += 0.5*(chord*chord+prevChord*prevChord)*dv;
+        momentInt += 0.5*(chord*v+prevChord*prevV)*dv;
+      }
+      prevChord=chord; prevV=v;
+    }
+    if(Math.abs(areaInt) < 1e-9) return null;
+    const macPx = chord2Int/areaInt;
+    const vMacPx = momentInt/areaInt;
+    const usAtMac = chordAt(vMacPx);
+    const leU = usAtMac.length>=2 ? Math.min(...usAtMac) : null;
+    return {
+      mac: macPx/frame.scale,
+      quarterChordStation: leU!=null ? (leU + 0.25*macPx)/frame.scale : null,
+    };
+  }
+
+  function loadImage(file, cb){
+    const reader = new FileReader();
+    reader.onload = e => {
+      const img = new Image();
+      img.onload = () => cb(img);
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function setupCanvas(canvas, view){
+    const ctx = canvas.getContext('2d');
+    function redraw(){
+      if(!view.img) return;
+      canvas.width = view.img.naturalWidth;
+      canvas.height = view.img.naturalHeight;
+      ctx.drawImage(view.img,0,0);
+      // calibration line
+      if(view.calibPts.length){
+        ctx.strokeStyle = '#2b4c6f'; ctx.fillStyle='#2b4c6f'; ctx.lineWidth = Math.max(2, canvas.width/400);
+        drawPolyline(view.calibPts, false);
+      }
+      // finished shapes
+      const colors = { wing:'#2f6f52', htail:'#c9622a', vtail:'#c9622a' };
+      ['wing','htail','vtail'].forEach(k=>{
+        if(view[k]){
+          ctx.strokeStyle = colors[k]; ctx.fillStyle = colors[k]+'55';
+          drawPolyline(view[k].pts, true, true);
+          ctx.beginPath();
+          ctx.arc(view[k].cx, view[k].cy, Math.max(4,canvas.width/250), 0, 7);
+          ctx.fillStyle = colors[k]; ctx.fill();
+        }
+      });
+      if(view.wingRefPt){
+        // draw the station line through the marked point, perpendicular to the
+        // fuselage axis (not a screen-vertical line) so it stays correct even
+        // when the fuselage isn't horizontal in the photo.
+        const frame = buildFrame(view);
+        ctx.strokeStyle = '#8038bd'; ctx.lineWidth = Math.max(2, canvas.width/400);
+        ctx.beginPath();
+        if(frame){
+          const [px,py] = view.wingRefPt;
+          const L = Math.hypot(canvas.width, canvas.height);
+          ctx.moveTo(px - frame.vx*L, py - frame.vy*L);
+          ctx.lineTo(px + frame.vx*L, py + frame.vy*L);
+        } else {
+          ctx.moveTo(view.wingRefPt[0], 0); ctx.lineTo(view.wingRefPt[0], canvas.height);
+        }
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(view.wingRefPt[0], view.wingRefPt[1], Math.max(4,canvas.width/250), 0, 7);
+        ctx.fillStyle = '#8038bd'; ctx.fill();
+      }
+      // weighted-centroid surfaces
+      if(view.surfaces){
+        view.surfaces.forEach(s=>{
+          if(!s.pts) return;
+          ctx.strokeStyle = s.color; ctx.fillStyle = s.color+'44';
+          drawPolyline(s.pts, true, true);
+          ctx.beginPath();
+          ctx.arc(s.cx, s.cy, Math.max(4,canvas.width/250), 0, 7);
+          ctx.fillStyle = s.color; ctx.fill();
+        });
+        if(view.combinedCentroid){
+          ctx.fillStyle = '#000'; ctx.strokeStyle = '#fff'; ctx.lineWidth = Math.max(1.5, canvas.width/600);
+          const {x,y} = view.combinedCentroid;
+          ctx.beginPath(); ctx.arc(x,y, Math.max(6,canvas.width/180), 0, 7); ctx.fill(); ctx.stroke();
+        }
+      }
+      // in-progress poly
+      if(view.mode==='poly' && view.poly.length){
+        ctx.strokeStyle = '#c9622a'; ctx.fillStyle = '#c9622a';
+        drawPolyline(view.poly, false, false);
+      }
+    }
+    function drawPolyline(pts, close, fill){
+      ctx.beginPath();
+      ctx.moveTo(pts[0][0], pts[0][1]);
+      for(let i=1;i<pts.length;i++) ctx.lineTo(pts[i][0], pts[i][1]);
+      if(close) ctx.closePath();
+      if(fill) ctx.fill();
+      ctx.stroke();
+      pts.forEach(p=>{
+        ctx.beginPath();
+        ctx.arc(p[0],p[1], Math.max(3,canvas.width/300), 0, 7);
+        ctx.fill();
+      });
+    }
+    canvas.addEventListener('click', e => {
+      const rect = canvas.getBoundingClientRect();
+      const sx = canvas.width/rect.width, sy = canvas.height/rect.height;
+      const x = (e.clientX-rect.left)*sx, y = (e.clientY-rect.top)*sy;
+      view.onClick && view.onClick(x,y);
+      redraw();
+    });
+    view.redraw = redraw;
+    return redraw;
+  }
+
+  // ---------- TOP VIEW WIRING ----------
+  const topCanvas = document.getElementById('topCanvas');
+  setupCanvas(topCanvas, state.top);
+
+  document.getElementById('topFile').addEventListener('change', e => {
+    const f = e.target.files[0]; if(!f) return;
+    loadImage(f, img => {
+      state.top.img = img;
+      state.top.calibPts=[]; state.top.scale=null; state.top.wing=null; state.top.htail=null;
+      checkTopCalibEnable();
+      state.top.redraw();
+    });
+  });
+  document.getElementById('topFuseLen').addEventListener('input', e=>{
+    state.top.fuseLen = parseFloat(e.target.value)||null;
+    checkTopCalibEnable();
+  });
+  function checkTopCalibEnable(){
+    document.getElementById('topCalibBtn').disabled = !(state.top.img && state.top.fuseLen);
+  }
+  document.getElementById('topCalibBtn').addEventListener('click', ()=>{
+    state.top.mode='calib'; state.top.calibPts=[];
+    document.getElementById('topScaleHint').textContent = 'Tap the nose tip, then the tail tip, on the image.';
+    setTopModeBadge('calibrating...');
+    state.top.onClick = (x,y) => {
+      if(state.top.mode!=='calib') return;
+      state.top.calibPts.push([x,y]);
+      if(state.top.calibPts.length===2){
+        const px = dist(state.top.calibPts[0], state.top.calibPts[1]);
+        state.top.scale = px / state.top.fuseLen; // px per meter
+        document.getElementById('topScaleHint').textContent =
+          `Calibrated: ${px.toFixed(1)} px = ${state.top.fuseLen} m → scale ${state.top.scale.toFixed(2)} px/m.`;
+        state.top.mode=null;
+        setTopModeBadge('ready');
+        document.getElementById('drawWing').disabled=false;
+        document.getElementById('drawHtail').disabled=false;
+      }
+    };
+  });
+
+  function startTopPoly(kind){
+    state.top.mode='poly'; state.top.poly=[]; state.top.polyKind=kind;
+    setTopModeBadge('drawing '+(kind==='wing'?'wing':'horizontal tail'));
+    document.getElementById('finishPoly').disabled=false;
+    document.getElementById('undoPoint').disabled=false;
+    state.top.onClick = (x,y) => {
+      if(state.top.mode!=='poly') return;
+      state.top.poly.push([x,y]);
+    };
+  }
+  document.getElementById('drawWing').addEventListener('click', ()=>startTopPoly('wing'));
+  document.getElementById('drawHtail').addEventListener('click', ()=>startTopPoly('htail'));
+  document.getElementById('undoPoint').addEventListener('click', ()=>{
+    if(state.top.mode==='poly' && state.top.poly.length){ state.top.poly.pop(); state.top.redraw(); }
+  });
+  document.getElementById('finishPoly').addEventListener('click', ()=>{
+    if(state.top.mode!=='poly' || state.top.poly.length<3) return;
+    const {area,cx,cy} = shoelaceAreaCentroid(state.top.poly);
+    const pts = state.top.poly.slice();
+    const frame = buildFrame(state.top);
+    // Span must be measured along the true spanwise axis (perpendicular to the
+    // nose->tail calibration line), not the image's raw x-axis: a photo where the
+    // fuselage isn't perfectly horizontal will otherwise report the wing's
+    // chordwise extent instead of its span. bboxWidth() is only a pre-calibration
+    // fallback (span cannot be resolved without a frame, but drawing is disabled
+    // until calibration is done, so this path should not normally be hit).
+    const span = frame
+      ? (() => {
+          const offsets = pts.map(p => {
+            const dx = p[0]-frame.nose[0], dy = p[1]-frame.nose[1];
+            return dx*frame.vx + dy*frame.vy; // pixel offset along the spanwise axis
+          });
+          return Math.max(...offsets) - Math.min(...offsets);
+        })()
+      : bboxWidth(pts);
+    const macInfo = frame ? computeMAC(pts, frame) : null;
+    state.top[state.top.polyKind] = { pts, area, cx, cy, span, mac: macInfo };
+    state.top.mode=null; state.top.poly=[];
+    setTopModeBadge('ready');
+    document.getElementById('finishPoly').disabled=true;
+    document.getElementById('undoPoint').disabled=true;
+    updateTopHint();
+    state.top.redraw();
+    updateResults();
+  });
+  function setTopModeBadge(text){
+    const b=document.getElementById('topModeBadge');
+    b.textContent=text;
+    b.className = 'badge ' + (text==='ready'?'ok':'pending');
+  }
+  function updateTopHint(){
+    const scale = state.top.scale;
+    const w = state.top.wing, h = state.top.htail;
+    const swText = w && scale ? (w.area/(scale*scale)).toFixed(4)+' m²' : '—';
+    const bText = w && scale ? (w.span/scale).toFixed(3)+' m' : '—';
+    const macText = w && w.mac ? w.mac.mac.toFixed(4)+' m' : '—';
+    const shtText = h && scale ? (h.area/(scale*scale)).toFixed(4)+' m²' : '—';
+    document.getElementById('topDataHint').textContent = `Sw: ${swText}   span b: ${bText}   MAC: ${macText}   Sht: ${shtText}`;
+  }
+
+  // ---------- SIDE VIEW WIRING ----------
+  const sideCanvas = document.getElementById('sideCanvas');
+  setupCanvas(sideCanvas, state.side);
+
+  document.getElementById('sideFile').addEventListener('change', e => {
+    const f = e.target.files[0]; if(!f) return;
+    loadImage(f, img => {
+      state.side.img = img;
+      state.side.calibPts=[]; state.side.scale=null; state.side.vtail=null; state.side.wingRefPt=null;
+      state.side.surfaces=[]; state.side.combinedCentroid=null;
+      renderSurfaceList();
+      checkSideCalibEnable();
+      state.side.redraw();
+    });
+  });
+  document.getElementById('sideFuseLen').addEventListener('input', e=>{
+    state.side.fuseLen = parseFloat(e.target.value)||null;
+    checkSideCalibEnable();
+  });
+  function checkSideCalibEnable(){
+    document.getElementById('sideCalibBtn').disabled = !(state.side.img && state.side.fuseLen);
+  }
+  document.getElementById('sideCalibBtn').addEventListener('click', ()=>{
+    state.side.mode='calib'; state.side.calibPts=[];
+    document.getElementById('sideScaleHint').textContent = 'Tap the nose tip, then the tail tip, on the image.';
+    setSideModeBadge('calibrating...');
+    state.side.onClick = (x,y) => {
+      if(state.side.mode!=='calib') return;
+      state.side.calibPts.push([x,y]);
+      if(state.side.calibPts.length===2){
+        const px = dist(state.side.calibPts[0], state.side.calibPts[1]);
+        state.side.scale = px / state.side.fuseLen;
+        document.getElementById('sideScaleHint').textContent =
+          `Calibrated: ${px.toFixed(1)} px = ${state.side.fuseLen} m → scale ${state.side.scale.toFixed(2)} px/m.`;
+        state.side.mode=null;
+        setSideModeBadge('ready');
+        document.getElementById('markWingRef').disabled=false;
+        document.getElementById('drawVtail').disabled=false;
+        document.getElementById('addSurface').disabled=false;
+      }
+    };
+  });
+  document.getElementById('markWingRef').addEventListener('click', ()=>{
+    state.side.mode='wingref';
+    setSideModeBadge('tap wing reference station');
+    state.side.onClick = (x,y) => {
+      if(state.side.mode!=='wingref') return;
+      state.side.wingRefPt = [x,y];
+      state.side.mode=null;
+      setSideModeBadge('ready');
+      updateSideHint();
+      updateResults();
+    };
+  });
+  document.getElementById('drawVtail').addEventListener('click', ()=>{
+    state.side.mode='poly'; state.side.poly=[];
+    setSideModeBadge('drawing vertical tail');
+    document.getElementById('finishPolySide').disabled=false;
+    document.getElementById('undoPointSide').disabled=false;
+    state.side.onClick = (x,y) => {
+      if(state.side.mode!=='poly') return;
+      state.side.poly.push([x,y]);
+    };
+  });
+  document.getElementById('undoPointSide').addEventListener('click', ()=>{
+    if(state.side.mode==='poly' && state.side.poly.length){ state.side.poly.pop(); state.side.redraw(); }
+  });
+  document.getElementById('finishPolySide').addEventListener('click', ()=>{
+    if(state.side.mode!=='poly' || state.side.poly.length<3) return;
+    const {area,cx,cy} = shoelaceAreaCentroid(state.side.poly);
+    state.side.vtail = { pts: state.side.poly.slice(), area, cx, cy };
+    state.side.mode=null; state.side.poly=[];
+    setSideModeBadge('ready');
+    document.getElementById('finishPolySide').disabled=true;
+    document.getElementById('undoPointSide').disabled=true;
+    updateSideHint();
+    state.side.redraw();
+    updateResults();
+  });
+  function setSideModeBadge(text){
+    const b=document.getElementById('sideModeBadge');
+    b.textContent=text;
+    b.className = 'badge ' + (text==='ready'?'ok':'pending');
+  }
+  function updateSideHint(){
+    const scale = state.side.scale;
+    const v = state.side.vtail;
+    const svtText = v && scale ? (v.area/(scale*scale)).toFixed(4)+' m²' : '—';
+    const refText = state.side.wingRefPt!=null && scale ? 'set' : '—';
+    document.getElementById('sideDataHint').textContent = `Svt: ${svtText}   wing ref x: ${refText}`;
+  }
+
+  // ---------- SIDE PROFILE WEIGHTED CENTROID ----------
+  const SURFACE_COLORS = ['#8038bd','#1a7a7a','#a3610e','#6f8f2f','#b03a6b','#3a5aa8','#a83a3a','#2f8f6f'];
+  let surfaceIdSeq = 1;
+
+  document.getElementById('addSurface').addEventListener('click', ()=>{
+    const s = { id: surfaceIdSeq++, name: 'Surface '+state.side.surfaces.length, weight: 1, pts:null, area:0, cx:0, cy:0,
+                color: SURFACE_COLORS[(state.side.surfaces.length) % SURFACE_COLORS.length] };
+    state.side.surfaces.push(s);
+    renderSurfaceList();
+  });
+
+  function renderSurfaceList(){
+    const list = document.getElementById('surfaceList');
+    list.innerHTML = '';
+    state.side.surfaces.forEach(s => {
+      const row = document.createElement('div');
+      row.className = 'row';
+      row.style.borderLeft = `4px solid ${s.color}`;
+      row.style.paddingLeft = '8px';
+      row.innerHTML = `
+        <div style="flex:2;min-width:120px;">
+          <label>Name</label>
+          <input type="text" data-role="name" value="${s.name}">
+        </div>
+        <div style="flex:1;min-width:80px;">
+          <label>Weight</label>
+          <input type="number" data-role="weight" step="0.01" value="${s.weight}">
+        </div>
+        <div style="align-self:flex-end;display:flex;gap:6px;">
+          <button class="secondary" data-role="draw">${s.pts ? 'Redraw' : 'Draw shape'}</button>
+          <button class="danger" data-role="remove">Remove</button>
+        </div>
+        <div style="flex-basis:100%;" class="hint" data-role="status"></div>
+      `;
+      const nameInput = row.querySelector('[data-role=name]');
+      const weightInput = row.querySelector('[data-role=weight]');
+      nameInput.addEventListener('input', ()=>{ s.name = nameInput.value; updateSurfaceResults(); });
+      weightInput.addEventListener('input', ()=>{ s.weight = parseFloat(weightInput.value)||0; updateSurfaceResults(); });
+      row.querySelector('[data-role=draw]').addEventListener('click', ()=> startSurfaceDraw(s));
+      row.querySelector('[data-role=remove]').addEventListener('click', ()=>{
+        state.side.surfaces = state.side.surfaces.filter(x=>x.id!==s.id);
+        renderSurfaceList();
+        state.side.redraw();
+        updateSurfaceResults();
+      });
+      const statusEl = row.querySelector('[data-role=status]');
+      if(s.pts && state.side.scale){
+        statusEl.textContent = `area ${(s.area/(state.side.scale**2)).toFixed(4)} m²`;
+      } else {
+        statusEl.textContent = 'not drawn yet';
+      }
+      list.appendChild(row);
+    });
+  }
+
+  function startSurfaceDraw(surface){
+    state.side.mode='poly'; state.side.poly=[]; state.side.drawTargetSurfaceId = surface.id;
+    setSideModeBadge('drawing '+surface.name);
+    document.getElementById('finishPolySurf').disabled=false;
+    document.getElementById('undoPointSurf').disabled=false;
+    state.side.onClick = (x,y) => {
+      if(state.side.mode!=='poly' || state.side.drawTargetSurfaceId==null) return;
+      state.side.poly.push([x,y]);
+    };
+  }
+  document.getElementById('undoPointSurf').addEventListener('click', ()=>{
+    if(state.side.mode==='poly' && state.side.drawTargetSurfaceId!=null && state.side.poly.length){
+      state.side.poly.pop(); state.side.redraw();
+    }
+  });
+  document.getElementById('finishPolySurf').addEventListener('click', ()=>{
+    if(state.side.mode!=='poly' || state.side.drawTargetSurfaceId==null || state.side.poly.length<3) return;
+    const surface = state.side.surfaces.find(s=>s.id===state.side.drawTargetSurfaceId);
+    if(surface){
+      const {area,cx,cy} = shoelaceAreaCentroid(state.side.poly);
+      surface.pts = state.side.poly.slice(); surface.area = area; surface.cx = cx; surface.cy = cy;
+    }
+    state.side.mode=null; state.side.poly=[]; state.side.drawTargetSurfaceId=null;
+    setSideModeBadge('ready');
+    document.getElementById('finishPolySurf').disabled=true;
+    document.getElementById('undoPointSurf').disabled=true;
+    renderSurfaceList();
+    state.side.redraw();
+    updateSurfaceResults();
+  });
+
+  function updateSurfaceResults(){
+    const table = document.getElementById('surfaceTable');
+    const hint = document.getElementById('surfCentroidHint');
+    const frame = buildFrame(state.side);
+    const drawn = state.side.surfaces.filter(s=>s.pts);
+    if(!frame || !drawn.length){
+      table.innerHTML = '';
+      hint.textContent = 'Combined centroid: — (calibrate the side view and draw at least one surface)';
+      state.side.combinedCentroid = null;
+      state.side.redraw && state.side.redraw();
+      return;
+    }
+    let rows = '<tr><th>Surface</th><th>Weight</th><th>Area</th><th>Station</th><th>Offset</th></tr>';
+    let sumWA=0, sumWAStation=0, sumWAOffset=0;
+    drawn.forEach(s=>{
+      const areaM2 = s.area/(frame.scale**2);
+      const {station, offset} = toStationOffset(frame, [s.cx, s.cy]);
+      const wa = s.weight*areaM2;
+      sumWA += wa; sumWAStation += wa*station; sumWAOffset += wa*offset;
+      rows += `<tr><td>${s.name}</td><td class="num">${s.weight}</td><td class="num">${areaM2.toFixed(4)} m²</td>` +
+              `<td class="num">${station.toFixed(3)} m</td><td class="num">${offset.toFixed(3)} m</td></tr>`;
+    });
+    table.innerHTML = rows;
+    if(Math.abs(sumWA) < 1e-9){
+      hint.textContent = 'Combined centroid: undefined (weighted areas sum to zero — check weights).';
+      state.side.combinedCentroid = null;
+    } else {
+      const stationC = sumWAStation/sumWA, offsetC = sumWAOffset/sumWA;
+      hint.textContent = `Combined centroid: station ${stationC.toFixed(3)} m from nose, offset ${offsetC.toFixed(3)} m from the nose→tail axis (effective weighted area ${sumWA.toFixed(4)} m²).`;
+      // draw marker back in pixel space
+      state.side.combinedCentroid = {
+        x: frame.nose[0] + (stationC*frame.ux + offsetC*frame.vx)*frame.scale,
+        y: frame.nose[1] + (stationC*frame.uy + offsetC*frame.vy)*frame.scale,
+      };
+    }
+    state.side.redraw && state.side.redraw();
+    updateResults();
+  }
+
+  // ---------- TABS ----------
+  document.getElementById('tabs').addEventListener('click', e=>{
+    const t = e.target.closest('.tab'); if(!t) return;
+    document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+    t.classList.add('active');
+    ['top','side','results'].forEach(k=>{
+      document.getElementById('panel-'+k).style.display = (k===t.dataset.tab)?'block':'none';
+    });
+    if(t.dataset.tab==='results') updateResults();
+  });
+
+  // ---------- RESULTS ----------
+  function computeSummary(){
+    const top = state.top, side = state.side;
+    const ready = top.scale && top.wing && top.htail && side.scale && side.vtail && side.wingRefPt!=null;
+    if(!ready) return null;
+
+    const Sw = top.wing.area/(top.scale**2);
+    const b = top.wing.span/top.scale;
+    const macInfo = top.wing.mac;
+    const macUsable = macInfo && macInfo.mac && macInfo.quarterChordStation!=null;
+    const MAC = macUsable ? macInfo.mac : Sw/b;
+    const htailMac = top.htail.mac;
+    const Sht = top.htail.area/(top.scale**2);
+    const Svt = side.vtail.area/(side.scale**2);
+
+    let Lht, LhtMethod;
+    if(macUsable && htailMac && htailMac.quarterChordStation!=null){
+      Lht = Math.abs(htailMac.quarterChordStation - macInfo.quarterChordStation);
+      LhtMethod = 'quarter-chord stations (wing MAC vs. horizontal tail MAC)';
+    } else {
+      // Fallback: centroid stations projected onto the fuselage axis (not the raw
+      // pixel x-difference — that's only correct if the fuselage happens to be
+      // perfectly horizontal in the photo).
+      const topFrame = buildFrame(top);
+      Lht = topFrame
+        ? Math.abs(toStationOffset(topFrame, [top.htail.cx, top.htail.cy]).station - toStationOffset(topFrame, [top.wing.cx, top.wing.cy]).station)
+        : Math.abs(top.htail.cx - top.wing.cx)/top.scale;
+      LhtMethod = 'shape centroids (MAC could not be resolved for this outline)';
+    }
+    // vertical arm: distance along fuselage axis (x in side view) between wing reference station and vtail centroid
+    const sideFrameForLvt = buildFrame(side);
+    const vtStation = sideFrameForLvt ? toStationOffset(sideFrameForLvt, [side.vtail.cx, side.vtail.cy]).station : side.vtail.cx/side.scale;
+    const wingRefStation = sideFrameForLvt ? toStationOffset(sideFrameForLvt, side.wingRefPt).station : side.wingRefPt[0]/side.scale;
+    const Lvt = Math.abs(vtStation - wingRefStation);
+    const Vht = (Sht*Lht)/(Sw*MAC);
+    const Vvt = (Svt*Lvt)/(Sw*b);
+
+    return { Sw, b, MAC, macUsable, Sht, Svt, Lht, LhtMethod, Lvt, Vht, Vvt };
+  }
+
+  function updateResults(){
+    const s = computeSummary();
+    const inputsTable = document.getElementById('inputsTable');
+    document.getElementById('exportDxf').disabled = !s && !(state.side.combinedCentroid);
+    if(!s){
+      inputsTable.innerHTML = '<tr><td>Complete the top-view and side-view steps to see results.</td></tr>';
+      document.getElementById('vhtResult').textContent = '—';
+      document.getElementById('vvtResult').textContent = '—';
+      return;
+    }
+    document.getElementById('exportDxf').disabled = false;
+    inputsTable.innerHTML = `
+      <tr><th>Quantity</th><th>Value</th></tr>
+      <tr><td>Wing area S<sub>W</sub></td><td class="num">${s.Sw.toFixed(4)} m²</td></tr>
+      <tr><td>Wing span b</td><td class="num">${s.b.toFixed(3)} m</td></tr>
+      <tr><td>Mean aerodynamic chord (MAC)${s.macUsable ? '' : ' — fallback: S<sub>W</sub>/b'}</td><td class="num">${s.MAC.toFixed(4)} m</td></tr>
+      <tr><td>Horizontal tail area S<sub>HT</sub></td><td class="num">${s.Sht.toFixed(4)} m²</td></tr>
+      <tr><td>Vertical tail area S<sub>VT</sub></td><td class="num">${s.Svt.toFixed(4)} m²</td></tr>
+      <tr><td>Horizontal tail arm L<sub>HT</sub> (${s.LhtMethod})</td><td class="num">${s.Lht.toFixed(3)} m</td></tr>
+      <tr><td>Vertical tail arm L<sub>VT</sub></td><td class="num">${s.Lvt.toFixed(3)} m</td></tr>
+    `;
+    document.getElementById('vhtResult').textContent = s.Vht.toFixed(4);
+    document.getElementById('vvtResult').textContent = s.Vvt.toFixed(4);
+  }
+
+  // ---------- DXF EXPORT ----------
+  function dxfPolyline(layer, ptsMeters, closed){
+    let s = `0\nPOLYLINE\n8\n${layer}\n66\n1\n70\n${closed?1:0}\n`;
+    ptsMeters.forEach(([x,y])=>{ s += `0\nVERTEX\n8\n${layer}\n10\n${x.toFixed(4)}\n20\n${y.toFixed(4)}\n30\n0.0\n`; });
+    s += `0\nSEQEND\n`;
+    return s;
+  }
+  function dxfPoint(layer,x,y){
+    return `0\nPOINT\n8\n${layer}\n10\n${x.toFixed(4)}\n20\n${y.toFixed(4)}\n30\n0.0\n`;
+  }
+  function dxfText(layer,x,y,h,text){
+    return `0\nTEXT\n8\n${layer}\n10\n${x.toFixed(4)}\n20\n${y.toFixed(4)}\n30\n0.0\n40\n${h}\n1\n${String(text).replace(/\n/g,' ')}\n`;
+  }
+  function sanitizeLayer(name){
+    return ('SURF_'+name).toUpperCase().replace(/[^A-Z0-9_]/g,'_').slice(0,60) || 'SURFACE';
+  }
+  function shapeToMeters(pts, frame){
+    return pts.map(p=>{ const {station,offset}=toStationOffset(frame,p); return [station,offset]; });
+  }
+
+  function generateDXF(){
+    const s = computeSummary();
+    let ents = '';
+    const topFrame = buildFrame(state.top);
+    if(topFrame){
+      if(state.top.wing){
+        ents += dxfPolyline('TOP_WING', shapeToMeters(state.top.wing.pts, topFrame), true);
+        const {station,offset} = toStationOffset(topFrame, [state.top.wing.cx, state.top.wing.cy]);
+        ents += dxfPoint('TOP_WING', station, offset);
+        ents += dxfText('TOP_WING', station, offset, 0.02, 'wing centroid');
+        if(state.top.wing.mac && state.top.wing.mac.quarterChordStation!=null){
+          const qc = state.top.wing.mac.quarterChordStation;
+          ents += dxfPoint('TOP_WING_MAC', qc, offset);
+          ents += dxfText('TOP_WING_MAC', qc, offset, 0.02, `wing MAC=${state.top.wing.mac.mac.toFixed(4)}m 1/4c`);
+        }
+      }
+      if(state.top.htail){
+        ents += dxfPolyline('TOP_HTAIL', shapeToMeters(state.top.htail.pts, topFrame), true);
+        const {station,offset} = toStationOffset(topFrame, [state.top.htail.cx, state.top.htail.cy]);
+        ents += dxfPoint('TOP_HTAIL', station, offset);
+        ents += dxfText('TOP_HTAIL', station, offset, 0.02, 'htail centroid');
+      }
+    }
+    const sideFrame = buildFrame(state.side);
+    if(sideFrame){
+      if(state.side.vtail){
+        ents += dxfPolyline('SIDE_VTAIL', shapeToMeters(state.side.vtail.pts, sideFrame), true);
+        const {station,offset} = toStationOffset(sideFrame, [state.side.vtail.cx, state.side.vtail.cy]);
+        ents += dxfPoint('SIDE_VTAIL', station, offset);
+        ents += dxfText('SIDE_VTAIL', station, offset, 0.02, 'vtail centroid');
+      }
+      if(state.side.wingRefPt){
+        const {station} = toStationOffset(sideFrame, state.side.wingRefPt);
+        ents += dxfText('SIDE_WING_REF', station, 0, 0.02, 'wing reference station');
+        ents += dxfPoint('SIDE_WING_REF', station, 0);
+      }
+      state.side.surfaces.filter(sf=>sf.pts).forEach(sf=>{
+        const layer = sanitizeLayer(sf.name);
+        ents += dxfPolyline(layer, shapeToMeters(sf.pts, sideFrame), true);
+        const {station,offset} = toStationOffset(sideFrame, [sf.cx, sf.cy]);
+        ents += dxfPoint(layer, station, offset);
+        ents += dxfText(layer, station, offset, 0.02, `${sf.name} (w=${sf.weight})`);
+      });
+      if(state.side.combinedCentroid){
+        const {station,offset} = toStationOffset(sideFrame, [state.side.combinedCentroid.x, state.side.combinedCentroid.y]);
+        ents += dxfPoint('SIDE_COMBINED_CENTROID', station, offset);
+        ents += dxfText('SIDE_COMBINED_CENTROID', station, offset, 0.03, 'combined weighted side centroid');
+      }
+    }
+    // text summary block, placed ahead of the nose so it never overlaps the geometry
+    const lines = [];
+    if(s){
+      lines.push(`Sw = ${s.Sw.toFixed(4)} m2`, `b = ${s.b.toFixed(3)} m`, `MAC = ${s.MAC.toFixed(4)} m`,
+                 `Sht = ${s.Sht.toFixed(4)} m2`, `Svt = ${s.Svt.toFixed(4)} m2`,
+                 `Lht = ${s.Lht.toFixed(3)} m (${s.LhtMethod})`, `Lvt = ${s.Lvt.toFixed(3)} m`,
+                 `V_HT = ${s.Vht.toFixed(4)}`, `V_VT = ${s.Vvt.toFixed(4)}`);
+    } else {
+      lines.push('Tail volume coefficients not available (top-view wing/htail or side-view vtail/wing-ref incomplete).');
+    }
+    if(state.side.combinedCentroid && sideFrame){
+      const {station,offset} = toStationOffset(sideFrame, [state.side.combinedCentroid.x, state.side.combinedCentroid.y]);
+      lines.push(`Combined weighted side centroid: station ${station.toFixed(3)} m, offset ${offset.toFixed(3)} m`);
+    }
+    let y = -0.2;
+    lines.forEach(line => { ents += dxfText('SUMMARY', -0.5, y, 0.03, line); y -= 0.08; });
+
+    return `0\nSECTION\n2\nENTITIES\n${ents}0\nENDSEC\n0\nEOF\n`;
+  }
+
+  document.getElementById('exportDxf').addEventListener('click', async ()=>{
+    const dxf = generateDXF();
+    const downloads = window.claude ? await window.claude.use('downloads').catch(()=>null) : null;
+    if(downloads){
+      try{
+        await downloads.save({ filename: 'tail_volume_export.dxf', data: dxf });
+        return;
+      }catch(e){ /* fall through to the plain-link path below */ }
+    }
+    const blob = new Blob([dxf], {type:'application/dxf'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'tail_volume_export.dxf';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  });
+})();
+</script>
+</body>
+</html>
